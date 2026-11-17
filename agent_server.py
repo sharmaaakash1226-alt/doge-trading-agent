@@ -610,14 +610,42 @@ async def _place_live_order(symbol: str, side: str, qty: float, leverage: float,
             quantity=qty,
             leverage=int(leverage),
         )
+        is_error = (
+            res.get("status") == "error"
+            or res.get("code") in (400, 401, 500)
+            or (isinstance(res.get("data"), dict) and res["data"].get("code") in (400, 401, 500))
+        )
+        if is_error:
+            err_msg = res.get("message") or str(res)
+            trading_agent.add_chat(
+                "alert",
+                f"❌ [COINDCX LIVE ORDER REJECTED] Exchange returned: {err_msg}. Order cancelled.",
+                action_tag="LIVE_ORDER_REJECTED",
+            )
+            # Rollback paper position so user is not stuck with ghost paper trade
+            for p in list(portfolio.get("positions", [])):
+                if p.get("id") == pos_id:
+                    portfolio["balance_usdt"] = round(portfolio["balance_usdt"] + p.get("amount_usdt", 0.0), 2)
+                    portfolio["positions"].remove(p)
+                    save_portfolio(portfolio)
+                    break
+            print(f"[COINDCX LIVE ORDER REJECTED] {side} {qty} {symbol}: {res}")
+            return
+
         trading_agent.add_chat(
             "alert",
-            f"[LIVE ORDER PLACED • COINDCX] {side.upper()} {qty} {symbol} @ {leverage:.0f}x. Exchange Resp: {res}",
+            f"✅ [LIVE REAL MONEY ORDER FILLED] {side.upper()} {qty} {symbol} @ {leverage:.0f}x. Exchange Resp: {res}",
             action_tag="LIVE_ORDER_PLACED",
         )
-        print(f"[COINDCX LIVE ORDER] {side} {qty} {symbol}: {res}")
+        print(f"[COINDCX LIVE ORDER FILLED] {side} {qty} {symbol}: {res}")
     except Exception as e:
-        trading_agent.add_chat("alert", f"[LIVE ORDER ERROR] Failed to place order on CoinDCX: {e}")
+        trading_agent.add_chat("alert", f"❌ [LIVE ORDER ERROR] Failed to place order on CoinDCX: {e}")
+        for p in list(portfolio.get("positions", [])):
+            if p.get("id") == pos_id:
+                portfolio["balance_usdt"] = round(portfolio["balance_usdt"] + p.get("amount_usdt", 0.0), 2)
+                portfolio["positions"].remove(p)
+                save_portfolio(portfolio)
+                break
         print(f"[COINDCX LIVE ORDER ERROR] {e}")
 
 
@@ -632,7 +660,7 @@ async def _close_live_position(symbol: str, side: str, qty: float, leverage: flo
         )
         print(f"[COINDCX LIVE CLOSE] {symbol}: {res}")
     except Exception as e:
-        trading_agent.add_chat("alert", f"[LIVE CLOSE ERROR] Failed to close {symbol} on CoinDCX: {e}")
+        trading_agent.add_chat("alert", f"[LIVE CLOSE ERROR] {e}")
         print(f"[COINDCX LIVE CLOSE ERROR] {e}")
 
 
@@ -748,7 +776,7 @@ def _close_paper_position(pos_id: str, exit_price: float) -> Dict:
 
     return {
         "status": "success",
-        "pnl": round(pnl, 2),
+        "pnl": round(net_pnl, 2),
         "pnl_pct": round(pnl_pct, 2),
         "new_balance": portfolio["balance_usdt"]
     }
@@ -779,9 +807,42 @@ def place_paper_order(order: OrderRequest):
     )
 
 
+class ClosePositionReq(BaseModel):
+    position_id: Optional[str] = None
+    pos_id: Optional[str] = None
+    exit_price: Optional[float] = None
+
+
 @app.post("/api/paper/close")
-def close_paper_position(pos_id: str, exit_price: float):
-    return _close_paper_position(pos_id, exit_price)
+async def close_paper_position(
+    req: Optional[ClosePositionReq] = None,
+    pos_id: Optional[str] = None,
+    exit_price: Optional[float] = None
+):
+    target_id = None
+    target_price = None
+
+    if req:
+        target_id = req.position_id or req.pos_id
+        target_price = req.exit_price
+
+    if not target_id:
+        target_id = pos_id
+    if not target_price:
+        target_price = exit_price
+
+    if not target_id:
+        if portfolio.get("positions"):
+            target_id = portfolio["positions"][0]["id"]
+        else:
+            return {"status": "error", "message": "No position specified and no open positions"}
+
+    if not target_price:
+        # Fetch live price or use position entry price
+        pos = next((p for p in portfolio.get("positions", []) if p.get("id") == target_id), None)
+        target_price = float(pos.get("entry_price", 0.0)) if pos else 0.0
+
+    return _close_paper_position(target_id, target_price)
 
 
 # ---------------------------------------------------------
@@ -983,14 +1044,40 @@ class ArmLiveRequest(BaseModel):
 
 
 @app.post("/api/coindcx/arm_live")
-def set_coindcx_live_mode(req: ArmLiveRequest):
+async def set_coindcx_live_mode(req: ArmLiveRequest):
     coindcx.live_trading_enabled = req.armed
+    synced_msg = ""
+    if req.armed:
+        # Automatically sync paper portfolio balance to live CoinDCX USDT Futures balance
+        try:
+            await coindcx.sync_server_time()
+            f_resp = await coindcx.get_futures_wallets()
+            if f_resp.get("status") == "success":
+                for fw in f_resp.get("data", []):
+                    if fw.get("currency_short_name", "").upper() == "USDT":
+                        real_usdt = float(fw.get("balance", 0.0) or 0.0)
+                        if real_usdt > 0:
+                            portfolio["balance_usdt"] = round(real_usdt, 2)
+                            save_portfolio(portfolio)
+                            synced_msg = f" (Synced real CoinDCX balance: ${real_usdt:.2f} USDT)"
+                            trading_agent.add_chat(
+                                "alert",
+                                f"💰 Real CoinDCX USDT Futures Balance Synced: ${real_usdt:.2f} USDT. 30% sizing calibrated to real funds (${real_usdt*0.30:.2f} margin/trade).",
+                                action_tag="BALANCE_SYNC",
+                            )
+        except Exception as e:
+            print(f"Error syncing live balance: {e}")
+
     trading_agent.add_chat(
         "alert",
-        f"COINDCX LIVE TRADING {'ARMED (REAL MONEY ON)' if req.armed else 'DISARMED (PAPER ONLY)'}.",
+        f"COINDCX LIVE TRADING {'ARMED (REAL MONEY ON)' if req.armed else 'DISARMED (PAPER ONLY)'}.{synced_msg}",
         action_tag="LIVE_ARM" if req.armed else "LIVE_DISARM"
     )
-    return {"status": "success", "live_trading_armed": coindcx.live_trading_enabled}
+    return {
+        "status": "success",
+        "live_trading_armed": coindcx.live_trading_enabled,
+        "balance_usdt": portfolio["balance_usdt"]
+    }
 
 # ---------------------------------------------------------
 # WEBSOCKET STREAM FOR GODOT

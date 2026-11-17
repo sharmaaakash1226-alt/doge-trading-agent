@@ -506,8 +506,21 @@
     }
 
     async function startContinuous15xLive() {
-      if (!confirm('⚡ Start Continuous 15x RSI Reversal Engine on DOGE?\n\n• Strategy: RSI Reversal (Dips Long, Spikes Short)\n• Leverage: 15x Isolated\n• Sizing: 30% Capital per trade\n• Target: +60% ROI (+4.0% price move)\n• Stop Loss: -30% ROI (-2.0% price move)\n• Trailing: Fixed (No premature shakeouts)\n• Execution: Continuous back-to-back trades\n\nClick OK to launch!')) return;
+      const ok = confirm('⚡ Launch Continuous 15x RSI Reversal Engine on DOGE?\n\n• Target: +60% ROI (+4.0% move)\n• Stop Loss: -30% ROI (-2.0% move)\n• Leverage: 15x Isolated\n• Sizing: 30% Real Capital per trade\n\nClick OK to launch with REAL MONEY on CoinDCX Futures!');
+      if (!ok) return;
+
       try {
+        // 1. Automatically Arm Real-Money Live Trading and sync real CoinDCX USDT Futures balance
+        const armRes = await fetch('/api/coindcx/arm_live', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ armed: true })
+        });
+        const armData = await armRes.json();
+        isLiveArmed = armData.live_trading_armed;
+        updateArmButton();
+
+        // 2. Launch Continuous Engine
         await fetch('/api/agent/task', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -522,6 +535,7 @@
           })
         });
         await pollPortfolioAndState();
+        await pollCoinDCX();
       } catch (e) {
         alert('Failed to start continuous engine: ' + e);
       }
