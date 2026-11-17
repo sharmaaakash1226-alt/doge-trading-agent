@@ -280,6 +280,11 @@
           <span class="pos-label">Live Safety Latch</span>
           <span class="pos-val" id="dcx-safety" style="font-size:11px;">LOCKED (PAPER)</span>
         </div>
+        <div style="margin-top: 10px;">
+          <button class="btn" id="arm-live-btn" style="width:100%; font-size:12px; padding:10px; background:rgba(239, 68, 68, 0.2); border:1px solid #ef4444; color:#f87171;" onclick="toggleLiveSafety()">
+            🔴 UNLOCK LIVE TRADING (REAL MONEY)
+          </button>
+        </div>
       </div>
       <div id="dcx-action-box" style="padding-top: 8px;">
         <div id="dcx-msg" style="font-size: 12px; color: var(--subtext); margin-bottom: 8px;">
@@ -525,6 +530,44 @@
       }
     }
 
+    let isLiveArmed = false;
+
+    async function toggleLiveSafety() {
+      const targetState = !isLiveArmed;
+      if (targetState) {
+        if (!confirm('⚠️ WARNING: You are about to enable REAL MONEY execution on your CoinDCX Futures account! Real orders will be placed with your USDT. Do you want to proceed?')) return;
+      }
+      try {
+        const res = await fetch('/api/coindcx/arm_live', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ armed: targetState })
+        });
+        const data = await res.json();
+        isLiveArmed = data.live_trading_armed;
+        updateArmButton();
+        pollCoinDCX();
+      } catch (e) {
+        alert('Error changing safety latch: ' + e);
+      }
+    }
+
+    function updateArmButton() {
+      const btn = document.getElementById('arm-live-btn');
+      if (!btn) return;
+      if (isLiveArmed) {
+        btn.innerText = '🟢 LOCK TO PAPER MODE (SAFE)';
+        btn.style.background = 'rgba(16, 185, 129, 0.2)';
+        btn.style.border = '1px solid #10b981';
+        btn.style.color = '#34d399';
+      } else {
+        btn.innerText = '🔴 UNLOCK LIVE TRADING (REAL MONEY)';
+        btn.style.background = 'rgba(239, 68, 68, 0.2)';
+        btn.style.border = '1px solid #ef4444';
+        btn.style.color = '#f87171';
+      }
+    }
+
     async function pollCoinDCX() {
       try {
         const [statusRes, balRes] = await Promise.all([
@@ -533,6 +576,9 @@
         ]);
         const status = await statusRes.json();
         const balData = await balRes.json();
+
+        isLiveArmed = !!status.live_trading_armed;
+        updateArmButton();
 
         const badge = document.getElementById('dcx-status-badge');
         const details = document.getElementById('dcx-details');

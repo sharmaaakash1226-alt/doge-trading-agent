@@ -812,6 +812,18 @@ class ChatRequest(BaseModel):
 
 @app.post("/api/agent/chat")
 async def agent_chat(req: ChatRequest):
+    lower = req.message.lower().strip()
+    # Recognize commands to arm/disarm real-money live trading
+    if "live" in lower and any(w in lower for w in ["true", "on", "arm", "enable", "start", "1"]):
+        coindcx.live_trading_enabled = True
+        msg = "🚨 COINDCX LIVE REAL-MONEY TRADING IS NOW ARMED! Safety latch UNLOCKED. Real orders will be placed on CoinDCX Futures."
+        trading_agent.add_chat("alert", msg, action_tag="LIVE_ARM")
+        return {"reply": msg, "live_trading_armed": True, "state": trading_agent.get_state()}
+    elif "paper" in lower or ("live" in lower and any(w in lower for w in ["false", "off", "disarm", "disable", "lock", "0"])):
+        coindcx.live_trading_enabled = False
+        msg = "🔒 COINDCX LIVE TRADING DISARMED. Switched back to safe PAPER SIMULATION mode."
+        trading_agent.add_chat("alert", msg, action_tag="LIVE_DISARM")
+        return {"reply": msg, "live_trading_armed": False, "state": trading_agent.get_state()}
     return await trading_agent.process_chat_message(req.message)
 
 
