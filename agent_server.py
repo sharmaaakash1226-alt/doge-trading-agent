@@ -69,6 +69,20 @@ async def serve_mobile_dashboard():
             return HTMLResponse(content=f.read())
     return HTMLResponse(content="<h2>Dashboard file not found.</h2>", status_code=404)
 
+@app.get("/api/my_ip")
+async def get_outbound_ip():
+    """Returns the exact public outbound IP address of this server (used for CoinDCX IP binding)."""
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            res = await client.get("https://api.ipify.org")
+            return {
+                "status": "success",
+                "outbound_ip": res.text.strip(),
+                "instructions": "Enter this exact IP address into CoinDCX API Key settings."
+            }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
 # ---------------------------------------------------------
 # PAPER TRADING STATE & PERSISTENCE
 # ---------------------------------------------------------
