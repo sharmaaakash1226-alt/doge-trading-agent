@@ -341,56 +341,86 @@ def generate_signal(df: pd.DataFrame, symbol: str) -> dict:
 # MARKET DATA FETCHING (FREE PUBLIC SOURCES - ASYNC)
 # ---------------------------------------------------------
 async def fetch_ohlcv_data(
-    symbol: str = "BTC/USDT",
+    symbol: str = "DOGE/USDT",
     timeframe: str = "15m",
     limit: int = 60,
     client: Optional[httpx.AsyncClient] = None,
 ) -> pd.DataFrame:
-    """Fetches real candles concurrently via async httpx or CCXT, with fallback."""
+    """Fetches real candles concurrently via async httpx from Binance Vision / Bybit with fallback."""
     formatted_symbol = symbol.replace("/", "").upper()
     own_client = client is None
     http = client or httpx.AsyncClient()
 
+    endpoints = [
+        f"https://data-api.binance.vision/api/v3/klines?symbol={formatted_symbol}&interval={timeframe}&limit={limit}",
+        f"https://api.binance.com/api/v3/klines?symbol={formatted_symbol}&interval={timeframe}&limit={limit}",
+    ]
+
     try:
-        # 1. Try public Binance REST API directly (fast, async, no API keys needed)
-        url = f"https://api.binance.com/api/v3/klines?symbol={formatted_symbol}&interval={timeframe}&limit={limit}"
-        resp = await http.get(url, timeout=4.5)
-        if resp.status_code == 200:
-            raw_candles = resp.json()
-            records = [
-                {
-                    "time": int(c[0]),
-                    "open": float(c[1]),
-                    "high": float(c[2]),
-                    "low": float(c[3]),
-                    "close": float(c[4]),
-                    "volume": float(c[5]),
-                }
-                for c in raw_candles
-            ]
-            return compute_indicators(pd.DataFrame(records))
-    except Exception as e:
-        print(f"Direct async REST error ({symbol}): {e}")
+        # 1. Try Binance Vision (Global Cloud-Friendly) and standard Binance
+        for url in endpoints:
+            try:
+                resp = await http.get(url, timeout=4.0)
+                if resp.status_code == 200:
+                    raw_candles = resp.json()
+                    if isinstance(raw_candles, list) and len(raw_candles) > 0:
+                        records = [
+                            {
+                                "time": int(c[0]),
+                                "open": float(c[1]),
+                                "high": float(c[2]),
+                                "low": float(c[3]),
+                                "close": float(c[4]),
+                                "volume": float(c[5]),
+                            }
+                            for c in raw_candles
+                        ]
+                        return compute_indicators(pd.DataFrame(records))
+            except Exception:
+                continue
+
+        # 2. Try Bybit (Globally accessible, no IP restrictions)
+        try:
+            bybit_int = "15" if timeframe == "15m" else ("60" if timeframe == "1h" else "15")
+            bybit_url = f"https://api.bybit.com/v5/market/kline?category=spot&symbol={formatted_symbol}&interval={bybit_int}&limit={limit}"
+            b_resp = await http.get(bybit_url, timeout=4.0)
+            if b_resp.status_code == 200:
+                b_data = b_resp.json().get("result", {}).get("list", [])
+                if b_data:
+                    b_data.reverse()
+                    records = [
+                        {
+                            "time": int(c[0]),
+                            "open": float(c[1]),
+                            "high": float(c[2]),
+                            "low": float(c[3]),
+                            "close": float(c[4]),
+                            "volume": float(c[5]),
+                        }
+                        for c in b_data
+                    ]
+                    return compute_indicators(pd.DataFrame(records))
+        except Exception:
+            pass
+
     finally:
         if own_client:
             await http.aclose()
 
-    # 2. Try CCXT if installed
-    if HAS_CCXT:
-        try:
-            import ccxt.async_support as ccxt_async
-            exchange = ccxt_async.binance({"enableRateLimit": True})
-            ohlcv = await exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
-            await exchange.close()
-            df = pd.DataFrame(ohlcv, columns=['time', 'open', 'high', 'low', 'close', 'volume'])
-            return compute_indicators(df)
-        except Exception as e:
-            print(f"CCXT fetch error ({symbol}): {e}")
-
     # 3. Fallback: Synthesized realistic market data for offline/unreachable test
     print(f"Using synthesized market data fallback for {symbol}...")
     now = int(time.time() * 1000)
-    base_price = 76000.0 if "BTC" in symbol else (2600.0 if "ETH" in symbol else 190.0)
+    if "BTC" in symbol:
+        base_price = 76000.0
+    elif "ETH" in symbol:
+        base_price = 2600.0
+    elif "SOL" in symbol:
+        base_price = 190.0
+    elif "DOGE" in symbol:
+        base_price = 0.0592
+    else:
+        base_price = 1.0
+
     records = []
     current = base_price
     for i in range(limit):
