@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Antigravity 50x Trading Agent</title>
+  <style>
+    :root {
+      --bg: #0b0e14;
+      --card: #151922;
+      --card-border: #232936;
+      --primary: #3b82f6;
+      --green: #10b981;
+      --red: #ef4444;
+      --yellow: #f59e0b;
+      --text: #f3f4f6;
+      --subtext: #9ca3af;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+    body { background-color: var(--bg); color: var(--text); padding-bottom: 70px; -webkit-font-smoothing: antialiased; }
+    
+    /* Top Bar */
+    .top-bar {
+      background: rgba(21, 25, 34, 0.95);
+      backdrop-filter: blur(10px);
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      padding: 14px 18px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--card-border);
+    }
+    .brand { font-size: 16px; font-weight: 700; letter-spacing: -0.3px; display: flex; align-items: center; gap: 8px; }
+    .brand-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--green); box-shadow: 0 0 10px var(--green); }
+    .badge { padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; text-transform: uppercase; }
+    .badge-idle { background: rgba(156, 163, 175, 0.15); color: var(--subtext); border: 1px solid #374151; }
+    .badge-live { background: rgba(16, 185, 129, 0.2); color: var(--green); border: 1px solid var(--green); animation: pulse 2s infinite; }
+    
+    @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; } }
+
+    .container { padding: 16px; max-width: 540px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+
+    /* Balance Hero */
+    .hero-card {
+      background: linear-gradient(145deg, #182030, #131722);
+      border: 1px solid var(--card-border);
+      border-radius: 18px;
+      padding: 20px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+    }
+    .hero-title { font-size: 12px; color: var(--subtext); text-transform: uppercase; letter-spacing: 0.8px; font-weight: 600; }
+    .hero-balance { font-size: 34px; font-weight: 800; margin: 6px 0; color: #fff; letter-spacing: -0.5px; }
+    .hero-sub { font-size: 13px; color: var(--green); display: flex; gap: 12px; font-weight: 600; }
+
+    /* Control Buttons */
+    .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .btn {
+      padding: 14px;
+      border: none;
+      border-radius: 14px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: all 0.15s ease;
+      touch-action: manipulation;
+    }
+    .btn-start { background: var(--green); color: #000; box-shadow: 0 4px 14px rgba(16, 185, 129, 0.3); }
+    .btn-stop { background: rgba(239, 68, 68, 0.15); color: var(--red); border: 1px solid rgba(239, 68, 68, 0.3); }
+    .btn-panic { background: #dc2626; color: #fff; grid-column: span 2; padding: 12px; font-size: 13px; }
+    .btn:active { transform: scale(0.97); }
+
+    /* Cards */
+    .card {
+      background: var(--card);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 16px;
+    }
+    .card-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    .card-title { font-size: 13px; font-weight: 700; text-transform: uppercase; color: var(--subtext); letter-spacing: 0.5px; }
+
+    /* Active Position Card */
+    .pos-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13px; }
+    .pos-label { color: var(--subtext); }
+    .pos-val { font-weight: 600; color: #fff; }
+    .pos-pnl { font-size: 22px; font-weight: 800; text-align: center; margin: 12px 0 6px 0; }
+    .pos-progress {
+      width: 100%;
+      height: 8px;
+      background: #232936;
+      border-radius: 4px;
+      overflow: hidden;
+      margin-top: 10px;
+    }
+    .pos-bar { height: 100%; background: linear-gradient(90deg, var(--green), #34d399); width: 0%; transition: width 0.3s; }
+
+    /* Trade Feed */
+    .trade-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+      font-size: 13px;
+    }
+    .trade-item:last-child { border-bottom: none; }
+    .tag { font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: 700; }
+    .tag-win { background: rgba(16, 185, 129, 0.2); color: var(--green); }
+    .tag-loss { background: rgba(239, 68, 68, 0.2); color: var(--red); }
+
+    /* Quick Chat Form */
+    .chat-box {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .chat-input {
+      flex: 1;
+      background: #0e1219;
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 12px 14px;
+      color: #fff;
+      font-size: 14px;
+      outline: none;
+    }
+    .chat-btn {
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      border-radius: 12px;
+      padding: 0 18px;
+      font-weight: 700;
+      font-size: 14px;
+    }
+    .chat-history {
+      max-height: 150px;
+      overflow-y: auto;
+      font-size: 12px;
+      color: var(--subtext);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .chat-msg { background: rgba(255,255,255,0.03); padding: 8px; border-radius: 8px; }
+  </style>
+</head>
+<body>
+
+  <!-- Top Bar -->
+  <div class="top-bar">
+    <div class="brand">
+      <div class="brand-dot" id="live-dot"></div>
+      <span>ANTIGRAVITY 50x</span>
+    </div>
+    <div class="badge badge-idle" id="agent-mode-badge">IDLE</div>
+  </div>
+
+  <div class="container">
+
+    <!-- Balance Hero -->
+    <div class="hero-card">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div class="hero-title">Portfolio Balance (USDT)</div>
+        <div style="display:flex; gap:6px;">
+          <button onclick="promptSetBalance()" style="background:rgba(255,255,255,0.1); border:1px solid #374151; color:#9ca3af; border-radius:8px; padding:3px 8px; font-size:11px; cursor:pointer;">Edit</button>
+          <button onclick="setFastBalance(100)" style="background:rgba(59,130,246,0.2); border:1px solid #3b82f6; color:#60a5fa; border-radius:8px; padding:3px 8px; font-size:11px; cursor:pointer;">$100</button>
+        </div>
+      </div>
+      <div class="hero-balance" id="val-balance">--.--</div>
+      <div class="hero-sub" style="display:flex; justify-content:space-between; align-items:center;">
+        <div>
+          <span>Option B: DOGE Exclusive</span>
+          <span>•</span>
+          <span>50x Leverage</span>
+        </div>
+        <span id="sync-status" style="font-size:11px; color:#10b981; font-weight:normal;">● Live</span>
+      </div>
+    </div>
+
+    <!-- Controls -->
+    <div class="controls">
+      <button class="btn btn-start" onclick="setMode('AUTO_TRADE')">
+        ▶ START AUTO
+      </button>
+      <button class="btn btn-stop" onclick="setMode('IDLE')">
+        ⏸ PAUSE / IDLE
+      </button>
+      <button class="btn btn-panic" id="panic-btn" style="display:none;" onclick="closeAllPositions()">
+        ⚠️ PANIC CLOSE POSITION
+      </button>
+    </div>
+
+    <!-- Active Trade Card -->
+    <div class="card" id="active-pos-card">
+      <div class="card-head">
+        <span class="card-title">Live Position</span>
+        <span class="badge" id="pos-side-badge">NO POSITION</span>
+      </div>
+      <div id="no-pos-msg" style="color: var(--subtext); font-size: 13px; text-align: center; padding: 14px 0;">
+        Scanning for high-conviction DOGE pullbacks...
+      </div>
+      <div id="pos-details" style="display: none;">
+        <div class="pos-pnl" id="pos-pnl-val">+0.00%</div>
+        <div class="pos-row">
+          <span class="pos-label">Entry Price</span>
+          <span class="pos-val" id="pos-entry">$0.0000</span>
+        </div>
+        <div class="pos-row">
+          <span class="pos-label">Target (+80% ROI)</span>
+          <span class="pos-val" style="color: var(--green);" id="pos-target">$0.0000</span>
+        </div>
+        <div class="pos-row">
+          <span class="pos-label">Trailing Stop-Loss</span>
+          <span class="pos-val" style="color: var(--red);" id="pos-sl">$0.0000</span>
+        </div>
+        <div class="pos-row">
+          <span class="pos-label">Invested Margin (30%)</span>
+          <span class="pos-val" id="pos-margin">$0.00</span>
+        </div>
+        <div class="pos-progress">
+          <div class="pos-bar" id="pos-bar-val"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Live DOGE Market Signal -->
+    <div class="card">
+      <div class="card-head">
+        <span class="card-title">DOGE/USDT Signal</span>
+        <span class="badge" id="doge-sig-badge">SCANNING</span>
+      </div>
+      <div class="pos-row">
+        <span class="pos-label">Live Price</span>
+        <span class="pos-val" id="doge-price">$0.0000</span>
+      </div>
+      <div class="pos-row">
+        <span class="pos-label">RSI (14)</span>
+        <span class="pos-val" id="doge-rsi">--</span>
+      </div>
+      <div class="pos-row">
+        <span class="pos-label">ADX Trend Strength</span>
+        <span class="pos-val" id="doge-adx">--</span>
+      </div>
+      <div class="pos-row">
+        <span class="pos-label">Nearest S / R</span>
+        <span class="pos-val" id="doge-sr">-- / --</span>
+      </div>
+    </div>
+
+    <!-- Interactive AI Chat Console -->
+    <div class="card">
+      <div class="card-head">
+        <span class="card-title">Agent Console</span>
+      </div>
+      <div class="chat-history" id="chat-stream">
+        <div class="chat-msg">Agent online. Option B active. Sizing: 30% capital @ 50x.</div>
+      </div>
+      <form class="chat-box" onsubmit="sendChat(event)">
+        <input class="chat-input" id="chat-in" placeholder="Ask agent or type command..." autocomplete="off" />
+        <button class="chat-btn" type="submit">Send</button>
+      </form>
+    </div>
+
+  </div>
+
+  <script>
+    let activePosId = null;
+    let latestSignal = null;
+
+    async function setFastBalance(val) {
+      try {
+        const res = await fetch('/api/portfolio/set_balance', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ balance_usdt: Number(val) })
+        });
+        const data = await res.json();
+        document.getElementById('val-balance').innerText = '$' + Number(data.balance_usdt).toFixed(2);
+      } catch (e) {
+        alert('Failed to set balance: ' + e);
+      }
+    }
+
+    async function promptSetBalance() {
+      const cur = document.getElementById('val-balance').innerText.replace('$', '').trim();
+      const val = prompt('Enter new Paper USDT balance:', cur || '100');
+      if (val && !isNaN(val) && Number(val) > 0) {
+        await setFastBalance(val);
+      }
+    }
+
+    async function pollPortfolioAndState() {
+      try {
+        const [portRes, stateRes] = await Promise.all([
+          fetch('/api/portfolio'),
+          fetch('/api/agent/state')
+        ]);
+        
+        const port = await portRes.json();
+        const state = await stateRes.json();
+
+        // 1. Instant Balance Update
+        const bal = Number(port.balance_usdt || 0).toFixed(2);
+        document.getElementById('val-balance').innerText = '$' + bal;
+
+        // 2. Sync timestamp
+        const now = new Date();
+        document.getElementById('sync-status').innerText = '● Synced ' + now.toLocaleTimeString();
+
+        // 3. Agent Mode
+        const modeBadge = document.getElementById('agent-mode-badge');
+        const liveDot = document.getElementById('live-dot');
+        const mode = state.mode || 'IDLE';
+        modeBadge.innerText = mode;
+        if (mode === 'AUTO_TRADE') {
+          modeBadge.className = 'badge badge-live';
+          liveDot.style.background = '#10b981';
+          liveDot.style.boxShadow = '0 0 10px #10b981';
+        } else {
+          modeBadge.className = 'badge badge-idle';
+          liveDot.style.background = '#9ca3af';
+          liveDot.style.boxShadow = 'none';
+        }
+
+        // 4. Active Position
+        const positions = port.positions || [];
+        const posDetails = document.getElementById('pos-details');
+        const noPosMsg = document.getElementById('no-pos-msg');
+        const panicBtn = document.getElementById('panic-btn');
+        const posSideBadge = document.getElementById('pos-side-badge');
+
+        if (positions.length > 0) {
+          const pos = positions[0];
+          activePosId = pos.id;
+          noPosMsg.style.display = 'none';
+          posDetails.style.display = 'block';
+          panicBtn.style.display = 'block';
+
+          posSideBadge.innerText = pos.side + ' ' + (pos.leverage || 50) + 'x';
+          posSideBadge.className = pos.side === 'LONG' ? 'badge tag-win' : 'badge tag-loss';
+
+          document.getElementById('pos-entry').innerText = '$' + Number(pos.entry_price).toFixed(4);
+          document.getElementById('pos-target').innerText = '$' + Number(pos.target_price).toFixed(4);
+          document.getElementById('pos-sl').innerText = '$' + Number(pos.stop_loss).toFixed(4);
+          document.getElementById('pos-margin').innerText = '$' + Number(pos.amount_usdt || pos.margin_usdt).toFixed(2);
+
+          const livePrice = Number((latestSignal && latestSignal.current_price) ? latestSignal.current_price : pos.entry_price);
+          const entryPrice = Number(pos.entry_price);
+          const lev = Number(pos.leverage || 50);
+          let roi = pos.side === 'LONG' 
+            ? ((livePrice - entryPrice) / entryPrice) * lev * 100 
+            : ((entryPrice - livePrice) / entryPrice) * lev * 100;
+          
+          const pnlEl = document.getElementById('pos-pnl-val');
+          pnlEl.innerText = (roi >= 0 ? '+' : '') + roi.toFixed(1) + '% ROI';
+          pnlEl.style.color = roi >= 0 ? 'var(--green)' : 'var(--red)';
+
+          const pctProgress = Math.max(0, Math.min(100, (roi / 80.0) * 100));
+          document.getElementById('pos-bar-val').style.width = pctProgress + '%';
+        } else {
+          activePosId = null;
+          noPosMsg.style.display = 'block';
+          posDetails.style.display = 'none';
+          panicBtn.style.display = 'none';
+          posSideBadge.innerText = 'NO POSITION';
+          posSideBadge.className = 'badge badge-idle';
+        }
+
+        // 5. Chat History
+        if (state.chat_history && state.chat_history.length > 0) {
+          const stream = document.getElementById('chat-stream');
+          const last5 = state.chat_history.slice(-6);
+          stream.innerHTML = last5.map(m => `
+            <div class="chat-msg">
+              <strong style="color: ${m.role === 'alert' ? 'var(--yellow)' : (m.role === 'agent' ? 'var(--primary)' : '#fff')}">${m.role.toUpperCase()}:</strong> ${m.text}
+            </div>
+          `).join('');
+          stream.scrollTop = stream.scrollHeight;
+        }
+
+      } catch (err) {
+        console.error('Portfolio poll error:', err);
+      }
+    }
+
+    async function pollSignal() {
+      try {
+        const sigRes = await fetch('/api/signal?symbol=DOGE/USDT');
+        const sig = await sigRes.json();
+        latestSignal = sig;
+
+        if (sig && sig.current_price) {
+          document.getElementById('doge-price').innerText = '$' + Number(sig.current_price).toFixed(4);
+          document.getElementById('doge-rsi').innerText = sig.rsi || '--';
+          document.getElementById('doge-adx').innerText = sig.adx || '--';
+          document.getElementById('doge-sr').innerText = (sig.nearest_support ? '$' + Number(sig.nearest_support).toFixed(4) : '--') + ' / ' + (sig.nearest_resistance ? '$' + Number(sig.nearest_resistance).toFixed(4) : '--');
+          
+          const sigBadge = document.getElementById('doge-sig-badge');
+          sigBadge.innerText = sig.signal || 'NEUTRAL';
+          if (sig.signal && sig.signal.includes('BUY')) {
+            sigBadge.className = 'badge tag-win';
+          } else if (sig.signal && sig.signal.includes('SELL')) {
+            sigBadge.className = 'badge tag-loss';
+          } else {
+            sigBadge.className = 'badge badge-idle';
+          }
+        }
+      } catch (err) {
+        console.error('Signal poll error:', err);
+      }
+    }
+
+    async function setMode(newMode) {
+      try {
+        await fetch('/api/agent/task', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode: newMode })
+        });
+        await pollPortfolioAndState();
+      } catch (e) {
+        alert('Failed to set mode: ' + e);
+      }
+    }
+
+    async function closeAllPositions() {
+      if (!activePosId) return;
+      if (!confirm('Close active position immediately at current market price?')) return;
+      try {
+        await fetch('/api/paper/close', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ position_id: activePosId })
+        });
+        await pollPortfolioAndState();
+      } catch (e) {
+        alert('Failed to close position: ' + e);
+      }
+    }
+
+    async function sendChat(e) {
+      e.preventDefault();
+      const input = document.getElementById('chat-in');
+      const msg = input.value.trim();
+      if (!msg) return;
+      input.value = '';
+      try {
+        await fetch('/api/agent/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: msg })
+        });
+        await pollPortfolioAndState();
+      } catch (e) {
+        alert('Failed to send message: ' + e);
+      }
+    }
+
+    // Fast loop for Portfolio Balance (every 1.5s)
+    pollPortfolioAndState();
+    setInterval(pollPortfolioAndState, 1500);
+
+    // Market signal loop (every 5s)
+    pollSignal();
+    setInterval(pollSignal, 5000);
+  </script>
+</body>
+</html>
