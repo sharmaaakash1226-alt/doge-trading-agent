@@ -869,7 +869,7 @@ async def control_agent_task(req: TaskRequest):
     if mode_upper == "CONTINUOUS_100":
         trading_agent.add_chat(
             "alert",
-            "⚡ CONTINUOUS 100% DOGE TRADING ACTIVATED: Target +100% ROI (+2.0% move) | SL -70% | Trailing +20% ratchet. Back-to-back continuous execution on DOGE.",
+            "⚡ CONTINUOUS 15X RSI ENGINE ACTIVATED: Target +60% ROI (+4.0% move) | SL -30% (-2.0% move) | Fixed 1:2 R:R (No trailing shakeouts) | 15x Isolated Leverage | Sizing: 30% Capital. Back-to-back continuous execution on DOGE.",
             action_tag="CONTINUOUS_START",
         )
     else:

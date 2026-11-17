@@ -189,9 +189,9 @@
 
     <!-- Controls -->
     <div class="controls">
-      <!-- Continuous 100% Target Logic Button -->
-      <button class="btn" style="grid-column: span 2; background: linear-gradient(135deg, #f59e0b, #d97706); color: #000; font-weight: 800; font-size: 14px; padding: 15px; box-shadow: 0 4px 18px rgba(245, 158, 11, 0.4); border-radius: 14px; border: none; cursor: pointer;" onclick="startContinuous100Live()">
-        ⚡ START CONTINUOUS 100% DOGE (REAL MONEY)
+      <!-- Continuous 15x RSI Reversal Engine Button -->
+      <button class="btn" style="grid-column: span 2; background: linear-gradient(135deg, #f59e0b, #d97706); color: #000; font-weight: 800; font-size: 14px; padding: 15px; box-shadow: 0 4px 18px rgba(245, 158, 11, 0.4); border-radius: 14px; border: none; cursor: pointer;" onclick="startContinuous15xLive()">
+        ⚡ START CONTINUOUS 15x (+60% TP / -30% SL)
       </button>
 
       <button class="btn btn-start" onclick="setMode('AUTO_TRADE')">
@@ -399,7 +399,7 @@
         const liveDot = document.getElementById('live-dot');
         const mode = state.mode || 'IDLE';
         if (mode === 'CONTINUOUS_100') {
-          modeBadge.innerText = 'CONTINUOUS 100%';
+          modeBadge.innerText = 'CONTINUOUS 15x';
           modeBadge.className = 'badge badge-live';
           liveDot.style.background = '#f59e0b';
           liveDot.style.boxShadow = '0 0 10px #f59e0b';
@@ -502,6 +502,28 @@
         }
       } catch (err) {
         console.error('Signal poll error:', err);
+      }
+    }
+
+    async function startContinuous15xLive() {
+      if (!confirm('⚡ Start Continuous 15x RSI Reversal Engine on DOGE?\n\n• Strategy: RSI Reversal (Dips Long, Spikes Short)\n• Leverage: 15x Isolated\n• Sizing: 30% Capital per trade\n• Target: +60% ROI (+4.0% price move)\n• Stop Loss: -30% ROI (-2.0% price move)\n• Trailing: Fixed (No premature shakeouts)\n• Execution: Continuous back-to-back trades\n\nClick OK to launch!')) return;
+      try {
+        await fetch('/api/agent/task', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            mode: 'CONTINUOUS_100',
+            leverage: 15,
+            target_roi_pct: 0.60,
+            initial_sl_roi_pct: 0.30,
+            trailing_sl_roi_pct: 999.0,
+            capital_allocation_pct: 0.30,
+            auto_loop: true
+          })
+        });
+        await pollPortfolioAndState();
+      } catch (e) {
+        alert('Failed to start continuous engine: ' + e);
       }
     }
 
