@@ -892,15 +892,55 @@ async def get_coindcx_status():
 
 @app.get("/api/coindcx/balance")
 async def get_coindcx_balance():
-    """Fetches real live wallet balances from CoinDCX."""
+    """Fetches real live wallet balances from CoinDCX (Futures margin wallet + Spot wallet)."""
     if not coindcx.is_configured:
         return {"status": "unconfigured", "connected": False, "balances": []}
     await coindcx.sync_server_time()
-    bal_resp = await coindcx._post_authenticated("/exchange/v1/users/balances", {})
-    if bal_resp.get("status") == "success":
-        data = bal_resp.get("data", [])
-        return {"status": "success", "connected": True, "balances": data}
-    return {"status": "error", "connected": False, "message": bal_resp.get("message", "Invalid credentials or request failed")}
+    
+    # 1. Fetch Futures Margin Wallets (USDT / INR futures)
+    futures_resp = await coindcx.get_futures_wallets()
+    futures_wallets = futures_resp.get("data", []) if futures_resp.get("status") == "success" else []
+    
+    # 2. Fetch Spot Balances
+    spot_resp = await coindcx._post_authenticated("/exchange/v1/users/balances", {})
+    spot_balances = spot_resp.get("data", []) if spot_resp.get("status") == "success" else []
+
+    # Find USDT Futures margin balance
+    usdt_futures = 0.0
+    inr_futures = 0.0
+    for fw in futures_wallets:
+        cname = fw.get("currency_short_name", "").upper()
+        b = float(fw.get("balance", 0.0) or 0.0)
+        if cname == "USDT":
+            usdt_futures = b
+        elif cname == "INR":
+            inr_futures = b
+
+    # Find Spot USDT & INR
+    usdt_spot = 0.0
+    inr_spot = 0.0
+    for sb in spot_balances:
+        cname = sb.get("currency", "").upper()
+        b = float(sb.get("balance", 0.0) or 0.0)
+        if cname == "USDT":
+            usdt_spot = b
+        elif cname == "INR":
+            inr_spot = b
+
+    total_usdt = usdt_futures if usdt_futures > 0 else usdt_spot
+    total_inr = inr_spot if inr_spot > 0 else inr_futures
+
+    return {
+        "status": "success",
+        "connected": True,
+        "usdt_futures": round(usdt_futures, 4),
+        "usdt_spot": round(usdt_spot, 4),
+        "total_usdt": round(total_usdt, 2),
+        "inr_spot": round(inr_spot, 2),
+        "total_inr": round(total_inr, 2),
+        "futures_wallets": futures_wallets,
+        "spot_balances": spot_balances
+    }
 
 class CoinDCXKeysRequest(BaseModel):
     api_key: str

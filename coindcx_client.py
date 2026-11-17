@@ -127,6 +127,31 @@ class CoinDCXClient:
         except Exception as e:
             return {"status": "error", "message": f"Connection error: {str(e)}"}
 
+    async def get_futures_wallets(self) -> Dict[str, Any]:
+        """Fetches live CoinDCX USDT-M Futures margin wallet balance."""
+        if not self.is_configured:
+            return {"status": "error", "message": "CoinDCX API Key and Secret are not configured."}
+        body = {"timestamp": int(round((time.time() + self.server_time_offset) * 1000))}
+        json_payload, signature = self._generate_signature(body)
+        headers = {
+            "Content-Type": "application/json",
+            "X-AUTH-APIKEY": self.api_key,
+            "X-AUTH-SIGNATURE": signature,
+        }
+        url = f"{COINDCX_BASE_URL}/exchange/v1/derivatives/futures/wallets"
+        client = self._get_client()
+        try:
+            resp = await client.request("GET", url, content=json_payload, headers=headers)
+            if resp.status_code == 200:
+                return {"status": "success", "data": resp.json()}
+            # Try POST as fallback
+            resp2 = await client.post(url, content=json_payload, headers=headers)
+            if resp2.status_code == 200:
+                return {"status": "success", "data": resp2.json()}
+            return {"status": "error", "code": resp.status_code, "message": resp.text}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
+
     async def get_futures_balances(self) -> Dict[str, Any]:
         """Fetches live CoinDCX USDT-M Futures margin wallet balance."""
         body = {}

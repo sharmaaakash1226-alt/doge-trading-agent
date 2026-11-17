@@ -547,12 +547,11 @@
           document.getElementById('dcx-name').innerText = status.account_name || 'Verified';
           document.getElementById('dcx-safety').innerText = status.safety_latch;
 
-          if (balData.balances && Array.isArray(balData.balances)) {
-            const usdt = balData.balances.find(b => b.currency === 'USDT');
-            const inr = balData.balances.find(b => b.currency === 'INR');
-            document.getElementById('dcx-usdt').innerText = '$' + Number(usdt ? usdt.balance : 0).toFixed(2);
-            document.getElementById('dcx-inr').innerText = '₹' + Number(inr ? inr.balance : 0).toFixed(2);
-          }
+          // Display real Futures Margin USDT and Spot INR
+          const usdtAmount = (balData.total_usdt !== undefined) ? balData.total_usdt : (balData.usdt_futures || 0);
+          const inrAmount = (balData.total_inr !== undefined) ? balData.total_inr : (balData.inr_spot || 0);
+          document.getElementById('dcx-usdt').innerText = '$' + Number(usdtAmount).toFixed(2);
+          document.getElementById('dcx-inr').innerText = '₹' + Number(inrAmount).toFixed(2);
         } else {
           badge.innerText = 'DISCONNECTED';
           badge.className = 'badge badge-idle';
