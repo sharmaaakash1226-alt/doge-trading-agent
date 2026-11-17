@@ -866,11 +866,18 @@ async def control_agent_task(req: TaskRequest):
         max_open_positions=req.max_open_positions,
         auto_loop=req.auto_loop,
     )
-    trading_agent.add_chat(
-        "agent",
-        f"Task activated -> Mode: {state['mode']} | Leverage: {state.get('leverage', 50)}x | Capital: {state.get('capital_allocation_pct', 0.5)*100:.0f}% | Max Pos: {state.get('max_open_positions', 1)}.",
-        action_tag=state["mode"],
-    )
+    if mode_upper == "CONTINUOUS_100":
+        trading_agent.add_chat(
+            "alert",
+            "⚡ CONTINUOUS 100% DOGE TRADING ACTIVATED: Target +100% ROI (+2.0% move) | SL -70% | Trailing +20% ratchet. Back-to-back continuous execution on DOGE.",
+            action_tag="CONTINUOUS_START",
+        )
+    else:
+        trading_agent.add_chat(
+            "agent",
+            f"Task activated -> Mode: {state['mode']} | Leverage: {state.get('leverage', 50)}x | Capital: {state.get('capital_allocation_pct', 0.5)*100:.0f}% | Max Pos: {state.get('max_open_positions', 1)}.",
+            action_tag=state["mode"],
+        )
     return {"status": "success", "state": state}
 
 

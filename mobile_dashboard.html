@@ -189,8 +189,13 @@
 
     <!-- Controls -->
     <div class="controls">
+      <!-- Continuous 100% Target Logic Button -->
+      <button class="btn" style="grid-column: span 2; background: linear-gradient(135deg, #f59e0b, #d97706); color: #000; font-weight: 800; font-size: 14px; padding: 15px; box-shadow: 0 4px 18px rgba(245, 158, 11, 0.4); border-radius: 14px; border: none; cursor: pointer;" onclick="startContinuous100Live()">
+        ⚡ START CONTINUOUS 100% DOGE (REAL MONEY)
+      </button>
+
       <button class="btn btn-start" onclick="setMode('AUTO_TRADE')">
-        ▶ START AUTO
+        ▶ NORMAL AUTO (+80%)
       </button>
       <button class="btn btn-stop" onclick="setMode('IDLE')">
         ⏸ PAUSE / IDLE
@@ -216,7 +221,7 @@
           <span class="pos-val" id="pos-entry">$0.0000</span>
         </div>
         <div class="pos-row">
-          <span class="pos-label">Target (+80% ROI)</span>
+          <span class="pos-label" id="pos-target-label">Target (+100% ROI)</span>
           <span class="pos-val" style="color: var(--green);" id="pos-target">$0.0000</span>
         </div>
         <div class="pos-row">
@@ -316,6 +321,39 @@
     let activePosId = null;
     let latestSignal = null;
 
+    async function startContinuous100Live() {
+      if (!confirm('⚡ START CONTINUOUS 100% DOGE TRADING WITH REAL MONEY?\n\n• Logic: Continuous back-to-back trades on DOGE\n• Direction: Agent studies indicators to decide UP vs DOWN\n• Target: +100% ROI (+2.0% price move)\n• Stop Loss: -70% ROI (-1.40% price move)\n• Trailing SL: +20% milestone ratchets\n• Sizing: 30% capital @ 50x Isolated\n\nClick OK to launch real-money trading now!')) return;
+
+      try {
+        // 1. Arm CoinDCX Live Trading
+        await fetch('/api/coindcx/arm_live', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ armed: true })
+        });
+
+        // 2. Start CONTINUOUS_100 Mode
+        await fetch('/api/agent/task', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            mode: 'CONTINUOUS_100',
+            target_roi_pct: 1.0,
+            initial_sl_roi_pct: 0.70,
+            trailing_sl_roi_pct: 0.20,
+            symbols: ['DOGE/USDT'],
+            auto_loop: true
+          })
+        });
+
+        await pollPortfolioAndState();
+        await pollCoinDCX();
+        alert('✅ CONTINUOUS 100% DOGE TRADING ACTIVATED!\nAgent is now trading live.');
+      } catch (e) {
+        alert('Failed to start continuous mode: ' + e);
+      }
+    }
+
     async function setFastBalance(val) {
       try {
         const res = await fetch('/api/portfolio/set_balance', {
@@ -360,12 +398,18 @@
         const modeBadge = document.getElementById('agent-mode-badge');
         const liveDot = document.getElementById('live-dot');
         const mode = state.mode || 'IDLE';
-        modeBadge.innerText = mode;
-        if (mode === 'AUTO_TRADE') {
+        if (mode === 'CONTINUOUS_100') {
+          modeBadge.innerText = 'CONTINUOUS 100%';
+          modeBadge.className = 'badge badge-live';
+          liveDot.style.background = '#f59e0b';
+          liveDot.style.boxShadow = '0 0 10px #f59e0b';
+        } else if (mode === 'AUTO_TRADE') {
+          modeBadge.innerText = 'AUTO TRADE';
           modeBadge.className = 'badge badge-live';
           liveDot.style.background = '#10b981';
           liveDot.style.boxShadow = '0 0 10px #10b981';
         } else {
+          modeBadge.innerText = mode;
           modeBadge.className = 'badge badge-idle';
           liveDot.style.background = '#9ca3af';
           liveDot.style.boxShadow = 'none';
@@ -404,7 +448,9 @@
           pnlEl.innerText = (roi >= 0 ? '+' : '') + roi.toFixed(1) + '% ROI';
           pnlEl.style.color = roi >= 0 ? 'var(--green)' : 'var(--red)';
 
-          const pctProgress = Math.max(0, Math.min(100, (roi / 80.0) * 100));
+          const tgtRoi = (pos.target_roi_pct !== undefined) ? (pos.target_roi_pct * 100) : 100;
+          document.getElementById('pos-target-label').innerText = 'Target (+' + tgtRoi.toFixed(0) + '% ROI)';
+          const pctProgress = Math.max(0, Math.min(100, (roi / tgtRoi) * 100));
           document.getElementById('pos-bar-val').style.width = pctProgress + '%';
         } else {
           activePosId = null;

@@ -131,8 +131,16 @@ class AutonomousTradingAgent:
         auto_loop: Optional[bool] = None,
     ) -> Dict[str, Any]:
         mode = mode.upper()
-        if mode not in ("IDLE", "RESEARCH_ONLY", "TRACK_ONLY", "AUTO_TRADE"):
+        if mode not in ("IDLE", "RESEARCH_ONLY", "TRACK_ONLY", "AUTO_TRADE", "CONTINUOUS_100"):
             mode = "RESEARCH_ONLY"
+
+        if mode == "CONTINUOUS_100":
+            self.symbols = ["DOGE/USDT"]
+            self.target_roi_pct = 1.0  # +100% Target ROI (+2.0% price move at 50x)
+            self.initial_sl_roi_pct = 0.70  # -70% Stop Loss (-1.40% price move at 50x)
+            self.trailing_sl_roi_pct = 0.20  # +20% Trailing ratchet step
+            self.auto_loop = True
+            self.max_open_positions = 1
 
         if symbols:
             self.symbols = symbols
@@ -348,7 +356,7 @@ class AutonomousTradingAgent:
                         )
 
                     # IMMEDIATELY TRIGGER RE-RESEARCH & RE-ENTRY FOR CONTINUOUS CYCLE
-                    if self._running and self.mode == "AUTO_TRADE" and self.auto_loop:
+                    if self._running and self.mode in ("AUTO_TRADE", "CONTINUOUS_100") and self.auto_loop:
                         asyncio.create_task(self._trigger_immediate_research_and_reentry())
 
         return closed_events
@@ -356,11 +364,11 @@ class AutonomousTradingAgent:
     async def _trigger_immediate_research_and_reentry(self):
         """
         Autonomous single-trade lifecycle loop:
-        When a trade exits, immediately re-scans the market, consults Antigravity AI,
-        sizes 30% of updated capital, and enters the next trade at 50x leverage.
+        When a trade exits, immediately re-scans DOGE, evaluates direction,
+        sizes 30% of capital, and enters the next trade at 50x leverage.
         """
         try:
-            if not self._running or self.mode != "AUTO_TRADE":
+            if not self._running or self.mode not in ("AUTO_TRADE", "CONTINUOUS_100"):
                 return
 
             portfolio = self._get_portfolio_cb() if self._get_portfolio_cb else {}
@@ -369,14 +377,14 @@ class AutonomousTradingAgent:
 
             self.add_chat(
                 "agent",
-                "[AUTONOMOUS LOOP] Trade closed. Running instant multi-pair research & Antigravity AI consultation...",
+                "[CONTINUOUS CYCLE] Trade settled. Running instant directional analysis & placing next DOGE trade...",
                 action_tag="RESEARCH_LOOP",
             )
 
             # Brief pause to let trade settlement finalize
             await asyncio.sleep(1.0)
 
-            if not self._running or self.mode != "AUTO_TRADE":
+            if not self._running or self.mode not in ("AUTO_TRADE", "CONTINUOUS_100"):
                 return
 
             if self._run_analysis_cb:
@@ -400,8 +408,8 @@ class AutonomousTradingAgent:
                     )
                     signals = snapshot.get("signals", [])
 
-                    # 1. Always track open positions for SL/TP when in TRACK_ONLY or AUTO_TRADE
-                    if self.mode in ("TRACK_ONLY", "AUTO_TRADE"):
+                    # 1. Always track open positions for SL/TP when in TRACK_ONLY, AUTO_TRADE, or CONTINUOUS_100
+                    if self.mode in ("TRACK_ONLY", "AUTO_TRADE", "CONTINUOUS_100"):
                         self.check_sl_tp_triggers(signals)
 
                     # 2. Periodic Research report in RESEARCH_ONLY mode (every 120s)
@@ -415,8 +423,8 @@ class AutonomousTradingAgent:
                             action_tag="RESEARCH_BRIEF",
                         )
 
-                    # 3. Auto-Entry with Single-Trade Cap & 30% Capital Sizing in AUTO_TRADE mode
-                    if self.mode == "AUTO_TRADE":
+                    # 3. Auto-Entry with Single-Trade Cap & 30% Capital Sizing
+                    if self.mode in ("AUTO_TRADE", "CONTINUOUS_100"):
                         await self._maybe_execute_auto_entry(signals, snapshot=snapshot)
 
             except asyncio.CancelledError:
@@ -522,7 +530,81 @@ class AutonomousTradingAgent:
         current_balance = float(portfolio.get("balance_usdt", 0.0))
         # 30% Capital allocation
         allocated_capital = round(current_balance * self.capital_allocation_pct, 2)
-        if allocated_capital < 2.0:
+        if allocated_capital < 1.50:
+            return
+
+        # -------------------------------------------------------------
+        # CONTINUOUS 100% TARGET LOGIC (BACK-TO-BACK TRADING)
+        # -------------------------------------------------------------
+        if self.mode == "CONTINUOUS_100":
+            doge_sig = next((s for s in signals if "DOGE" in s.get("symbol", "")), signals[0] if signals else None)
+            if not doge_sig:
+                return
+
+            c_entry = float(doge_sig.get("current_price", 0.0))
+            if c_entry <= 0:
+                return
+
+            # Agent Studies Technical Factors to determine UP vs DOWN
+            score = 0
+            rsi = float(doge_sig.get("rsi", 50.0))
+            ema_fast = float(doge_sig.get("ema_9", c_entry))
+            ema_slow = float(doge_sig.get("ema_21", c_entry))
+            ema_trend = float(doge_sig.get("ema_50", c_entry))
+            ema_macro = float(doge_sig.get("ema_200", ema_trend))
+
+            if c_entry > ema_trend:
+                score += 1
+            else:
+                score -= 1
+            if c_entry > ema_macro:
+                score += 1
+            else:
+                score -= 1
+            if ema_fast > ema_slow:
+                score += 1
+            else:
+                score -= 1
+            if rsi > 50.0:
+                score += 1
+            else:
+                score -= 1
+
+            c_side = "LONG" if score >= 0 else "SHORT"
+            bias = f"UP / Bullish (score {score:+d}, RSI {rsi:.1f})" if score >= 0 else f"DOWN / Bearish (score {score:+d}, RSI {rsi:.1f})"
+
+            # Target: +100% ROI (+2.00% move at 50x)
+            # Stop Loss: -70% ROI (-1.40% move at 50x)
+            t_delta = c_entry * (1.0 / self.leverage)
+            s_delta = c_entry * (0.70 / self.leverage)
+
+            if c_side == "LONG":
+                c_target = round(c_entry + t_delta, 6)
+                c_sl = round(c_entry - s_delta, 6)
+            else:
+                c_target = round(c_entry - t_delta, 6)
+                c_sl = round(c_entry + s_delta, 6)
+
+            res = self._place_order_cb(
+                symbol="DOGE/USDT",
+                side=c_side,
+                entry_price=c_entry,
+                stop_loss=c_sl,
+                target_price=c_target,
+                amount_usdt=allocated_capital,
+                leverage=self.leverage,
+                target_roi_pct=1.0,
+                initial_sl_roi_pct=0.70,
+                trailing_sl_roi_pct=0.20,
+            )
+
+            self.last_trade_ts = now
+            self.add_chat(
+                "agent",
+                f"[CONTINUOUS 100% DOGE] Study decided {c_side} ({bias}). "
+                f"Entered 50x @ ${c_entry:.4f} | Target: ${c_target:.4f} (+100% ROI) | SL: ${c_sl:.4f} (-70% ROI) | Margin: ${allocated_capital:.2f}",
+                action_tag="CONTINUOUS_ORDER",
+            )
             return
 
         open_symbols = {p.get("symbol") for p in open_positions}
