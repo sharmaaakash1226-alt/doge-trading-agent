@@ -876,6 +876,34 @@ async def get_coindcx_status():
         "open_futures_positions": len([p for p in futures_info.get("data", []) if float(p.get("active_pos", 0.0) or 0.0) != 0.0]) if futures_info.get("status") == "success" else 0
     }
 
+@app.get("/api/coindcx/balance")
+async def get_coindcx_balance():
+    """Fetches real live wallet balances from CoinDCX."""
+    if not coindcx.is_configured:
+        return {"status": "unconfigured", "connected": False, "balances": []}
+    await coindcx.sync_server_time()
+    bal_resp = await coindcx._post_authenticated("/exchange/v1/users/balances", {})
+    if bal_resp.get("status") == "success":
+        data = bal_resp.get("data", [])
+        return {"status": "success", "connected": True, "balances": data}
+    return {"status": "error", "connected": False, "message": bal_resp.get("message", "Invalid credentials or request failed")}
+
+class CoinDCXKeysRequest(BaseModel):
+    api_key: str
+    api_secret: str
+
+@app.post("/api/coindcx/update_keys")
+async def update_coindcx_keys(req: CoinDCXKeysRequest):
+    """Updates API key & secret dynamically from mobile."""
+    coindcx.api_key = req.api_key.strip()
+    coindcx.api_secret = req.api_secret.strip()
+    await coindcx.sync_server_time()
+    user_info = await coindcx._post_authenticated("/exchange/v1/users/info", {})
+    if user_info.get("status") == "success":
+        first_name = user_info.get("data", {}).get("first_name", "Verified User")
+        return {"status": "success", "connected": True, "account_name": first_name}
+    return {"status": "error", "connected": False, "message": user_info.get("message", "Invalid credentials")}
+
 
 class ArmLiveRequest(BaseModel):
     armed: bool

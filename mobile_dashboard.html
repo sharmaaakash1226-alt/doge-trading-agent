@@ -257,6 +257,40 @@
       </div>
     </div>
 
+    <!-- Live CoinDCX Exchange Card -->
+    <div class="card">
+      <div class="card-head">
+        <span class="card-title">CoinDCX Live Wallet</span>
+        <span class="badge badge-idle" id="dcx-status-badge">DISCONNECTED</span>
+      </div>
+      <div id="dcx-details" style="display: none;">
+        <div class="pos-row">
+          <span class="pos-label">Verified Name</span>
+          <span class="pos-val" id="dcx-name">--</span>
+        </div>
+        <div class="pos-row">
+          <span class="pos-label">USDT Balance</span>
+          <span class="pos-val" style="color: var(--green);" id="dcx-usdt">$0.00</span>
+        </div>
+        <div class="pos-row">
+          <span class="pos-label">INR Balance</span>
+          <span class="pos-val" id="dcx-inr">₹0.00</span>
+        </div>
+        <div class="pos-row">
+          <span class="pos-label">Live Safety Latch</span>
+          <span class="pos-val" id="dcx-safety" style="font-size:11px;">LOCKED (PAPER)</span>
+        </div>
+      </div>
+      <div id="dcx-action-box" style="padding-top: 8px;">
+        <div id="dcx-msg" style="font-size: 12px; color: var(--subtext); margin-bottom: 8px;">
+          Checking CoinDCX status...
+        </div>
+        <button class="btn" style="background: rgba(59, 130, 246, 0.15); border: 1px solid #3b82f6; color: #60a5fa; width: 100%; padding: 10px; font-size: 12px;" onclick="promptCoinDCXKeys()">
+          🔑 Update CoinDCX API Keys
+        </button>
+      </div>
+    </div>
+
     <!-- Interactive AI Chat Console -->
     <div class="card">
       <div class="card-head">
@@ -466,6 +500,71 @@
       }
     }
 
+    async function promptCoinDCXKeys() {
+      const apiKey = prompt('Enter CoinDCX API Key:');
+      if (!apiKey) return;
+      const apiSecret = prompt('Enter CoinDCX API Secret:');
+      if (!apiSecret) return;
+
+      document.getElementById('dcx-msg').innerText = 'Validating credentials with CoinDCX...';
+      try {
+        const res = await fetch('/api/coindcx/update_keys', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ api_key: apiKey.trim(), api_secret: apiSecret.trim() })
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+          alert('CoinDCX connected successfully for ' + data.account_name);
+          pollCoinDCX();
+        } else {
+          alert('CoinDCX connection failed: ' + data.message);
+        }
+      } catch (e) {
+        alert('Error updating CoinDCX keys: ' + e);
+      }
+    }
+
+    async function pollCoinDCX() {
+      try {
+        const [statusRes, balRes] = await Promise.all([
+          fetch('/api/coindcx/status'),
+          fetch('/api/coindcx/balance')
+        ]);
+        const status = await statusRes.json();
+        const balData = await balRes.json();
+
+        const badge = document.getElementById('dcx-status-badge');
+        const details = document.getElementById('dcx-details');
+        const msg = document.getElementById('dcx-msg');
+
+        if (status.connected) {
+          badge.innerText = 'CONNECTED';
+          badge.className = 'badge tag-win';
+          details.style.display = 'block';
+          msg.style.display = 'none';
+
+          document.getElementById('dcx-name').innerText = status.account_name || 'Verified';
+          document.getElementById('dcx-safety').innerText = status.safety_latch;
+
+          if (balData.balances && Array.isArray(balData.balances)) {
+            const usdt = balData.balances.find(b => b.currency === 'USDT');
+            const inr = balData.balances.find(b => b.currency === 'INR');
+            document.getElementById('dcx-usdt').innerText = '$' + Number(usdt ? usdt.balance : 0).toFixed(2);
+            document.getElementById('dcx-inr').innerText = '₹' + Number(inr ? inr.balance : 0).toFixed(2);
+          }
+        } else {
+          badge.innerText = 'DISCONNECTED';
+          badge.className = 'badge badge-idle';
+          details.style.display = 'none';
+          msg.style.display = 'block';
+          msg.innerText = status.message || 'API Keys invalid or not entered.';
+        }
+      } catch (e) {
+        console.error('CoinDCX poll error:', e);
+      }
+    }
+
     // Fast loop for Portfolio Balance (every 1.5s)
     pollPortfolioAndState();
     setInterval(pollPortfolioAndState, 1500);
@@ -473,6 +572,10 @@
     // Market signal loop (every 5s)
     pollSignal();
     setInterval(pollSignal, 5000);
+
+    // CoinDCX wallet loop (every 8s)
+    pollCoinDCX();
+    setInterval(pollCoinDCX, 8000);
   </script>
 </body>
 </html>
