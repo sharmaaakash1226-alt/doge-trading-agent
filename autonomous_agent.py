@@ -20,23 +20,23 @@ from trading_memory import trading_memory
 class AutonomousTradingAgent:
     def __init__(self):
         self.mode: str = "IDLE"  # IDLE | RESEARCH_ONLY | TRACK_ONLY | AUTO_TRADE
-        # Option B: High-Edge DOGE/USDT Exclusive Engine
-        self.symbols: List[str] = ["DOGE/USDT"]
-        self.timeframe: str = "15m"
+        # Strategy 1: SOL 8x Hourly Trend-Surfer with Progressive Tiered De-Leveraging
+        self.symbols: List[str] = ["SOL/USDT"]
+        self.timeframe: str = "1h"
         self.scan_interval_sec: int = 10
         self.trade_gap_sec: int = 0  # Re-research and enter immediately upon trade exit
-        self.trade_amount_usdt: float = 500.0
+        self.trade_amount_usdt: float = 100.0
         self.max_open_positions: int = 1  # Strictly 1 trade at a time
         self.min_confidence: int = 80  # Strict 80%+ high-conviction threshold
 
-        # 50x High-Leverage Autonomous Engine Configuration
-        self.leverage: float = 50.0  # 50x leverage
-        self.capital_allocation_pct: float = 0.30  # 30% capital per trade
-        self.target_roi_pct: float = 0.80  # Fee-adjusted 80% profit target (+1.60% price move to completely cover fees)
-        self.initial_sl_roi_pct: float = 0.70  # 70% initial stop-loss (-1.40% price move)
-        self.trailing_sl_roi_pct: float = 0.20  # 20% trailing stop distance
+        # 8x Isolated Leverage Autonomous Engine Configuration
+        self.leverage: float = 8.0  # 8x leverage
+        self.capital_allocation_pct: float = 0.30  # 30% capital initial tier
+        self.target_roi_pct: float = 0.60  # +60% profit target (+7.50% price move at 8x)
+        self.initial_sl_roi_pct: float = 0.30  # -30% stop-loss (-3.75% price move at 8x)
+        self.trailing_sl_roi_pct: float = 999.0  # Strict 2:1 RR (No trailing shakeouts)
         self.auto_loop: bool = True  # Continuous autonomous cycle until stopped
-        self.order_entry_type: str = "LIMIT_MAKER"  # Post-Only Maker entry (pays 0.01%-0.02% maker fee rate)
+        self.order_entry_type: str = "LIMIT_MAKER"  # Post-Only Maker entry
 
         # Anti-Whipsaw consecutive loss cooldown
         self.consecutive_losses: int = 0
@@ -61,8 +61,8 @@ class AutonomousTradingAgent:
 
         self.add_chat(
             "agent",
-            "Autonomous Trading Agent online. Status: IDLE. Ready for 50x Leverage single-trade continuous loop "
-            "(30% capital, 70% TP, 70% SL, 20% Trailing SL, 1 trade at a time).",
+            "Autonomous Trading Agent online. Status: IDLE. Ready for 'SOL 8x Hourly Trend-Surfer' "
+            "(Progressive Tiered Margin 30% -> 5% floor, 8x Leverage, +60% TP, -30% SL, 1 trade at a time).",
             action_tag="SYSTEM_READY",
         )
 
@@ -135,10 +135,12 @@ class AutonomousTradingAgent:
             mode = "RESEARCH_ONLY"
 
         if mode == "CONTINUOUS_100":
-            self.symbols = ["DOGE/USDT"]
-            self.target_roi_pct = 1.0  # +100% Target ROI (+2.0% price move at 50x)
-            self.initial_sl_roi_pct = 0.70  # -70% Stop Loss (-1.40% price move at 50x)
-            self.trailing_sl_roi_pct = 0.20  # +20% Trailing ratchet step
+            self.symbols = ["SOL/USDT"]
+            self.timeframe = "1h"
+            self.leverage = 8.0
+            self.target_roi_pct = 0.60  # +60% Target ROI (+7.50% price move at 8x)
+            self.initial_sl_roi_pct = 0.30  # -30% Stop Loss (-3.75% price move at 8x)
+            self.trailing_sl_roi_pct = 999.0  # Strict 2:1 RR (No trailing shakeouts)
             self.auto_loop = True
             self.max_open_positions = 1
 
@@ -385,7 +387,7 @@ class AutonomousTradingAgent:
 
             self.add_chat(
                 "agent",
-                "[CONTINUOUS CYCLE] Trade settled. Running instant directional analysis & placing next DOGE trade...",
+                "[CONTINUOUS CYCLE] Trade settled. Running instant directional analysis & placing next SOL trade...",
                 action_tag="RESEARCH_LOOP",
             )
 
@@ -510,6 +512,29 @@ class AutonomousTradingAgent:
 
             return True, f"Target clear of support (floor at ${near_sup:.4f}); SL sheltered by resistance at ${near_res:.4f}.", adjusted_sl
 
+    def get_tiered_margin_pct(self, balance: float) -> float:
+        """
+        Progressive Tiered De-Leveraging Formula:
+        - Balance < $200: 30% margin (Fast initial doubling phase)
+        - $200 <= Balance < $300: 25% margin
+        - $300 <= Balance < $400: 20% margin
+        - $400 <= Balance < $500: 15% margin
+        - $500 <= Balance < $600: 10% margin
+        - Balance >= $600: 5% margin floor (Permanent wealth-preservation)
+        """
+        if balance < 200.0:
+            return 0.30
+        elif balance < 300.0:
+            return 0.25
+        elif balance < 400.0:
+            return 0.20
+        elif balance < 500.0:
+            return 0.15
+        elif balance < 600.0:
+            return 0.10
+        else:
+            return 0.05
+
     async def _maybe_execute_auto_entry(
         self,
         signals: List[Dict[str, Any]],
@@ -542,47 +567,55 @@ class AutonomousTradingAgent:
             return
 
         # -------------------------------------------------------------
-        # CONTINUOUS 15X RSI REVERSAL LOGIC (BACK-TO-BACK TRADING)
+        # CONTINUOUS: "SOL 8x HOURLY TREND-SURFER" (TIERED DE-LEVERAGING)
         # -------------------------------------------------------------
         if self.mode == "CONTINUOUS_100":
-            doge_sig = next((s for s in signals if "DOGE" in s.get("symbol", "")), signals[0] if signals else None)
-            if not doge_sig:
+            sol_sig = next((s for s in signals if "SOL" in s.get("symbol", "")), signals[0] if signals else None)
+            if not sol_sig:
                 return
 
-            c_entry = float(doge_sig.get("current_price", 0.0))
+            c_entry = float(sol_sig.get("current_price", 0.0))
             if c_entry <= 0:
                 return
 
-            # Continuous Engine: RSI Reversal Direction Study
-            rsi = float(doge_sig.get("rsi", 50.0))
-            ema_trend = float(doge_sig.get("ema_50", c_entry))
-            lev = 15.0  # Mathematically optimized continuous leverage
+            # Sizing via Progressive Tiered De-Leveraging Formula (30% -> 5% floor)
+            m_pct = self.get_tiered_margin_pct(current_balance)
+            allocated_capital = round(current_balance * m_pct, 2)
+            if allocated_capital < 1.50:
+                return
 
-            if rsi < 42.0:
+            # Trend Alignment Indicators (SOL 8x Hourly Trend-Surfer)
+            e9 = float(sol_sig.get("ema_9", c_entry))
+            e21 = float(sol_sig.get("ema_21", c_entry))
+            e72 = float(sol_sig.get("ema_72", sol_sig.get("ema_50", c_entry)))
+            lev = 8.0  # 8x Isolated Leverage
+
+            # Decision Engine: 9 EMA vs 21 EMA with 72-Hour Macro Trend Filter
+            if e9 > e21 and c_entry > e72:
                 c_side = "LONG"
-                bias = f"Oversold Dip (RSI {rsi:.1f} < 42) -> Mean Reversion LONG"
-            elif rsi > 58.0:
+                bias = f"Bullish Trend-Surge (EMA9 ${e9:.2f} > EMA21 ${e21:.2f} & Price > 72h EMA ${e72:.2f})"
+            elif e9 < e21 and c_entry < e72:
                 c_side = "SHORT"
-                bias = f"Overbought Spike (RSI {rsi:.1f} > 58) -> Mean Reversion SHORT"
+                bias = f"Bearish Trend-Break (EMA9 ${e9:.2f} < EMA21 ${e21:.2f} & Price < 72h EMA ${e72:.2f})"
             else:
-                c_side = "LONG" if c_entry > ema_trend else "SHORT"
-                bias = f"Neutral RSI ({rsi:.1f}) -> Trend Follow {c_side} (vs EMA50 ${ema_trend:.4f})"
+                c_side = "LONG" if c_entry > e72 else "SHORT"
+                bias = f"Macro Trend Alignment (Price vs 72h EMA ${e72:.2f} -> {c_side})"
 
-            # Target: +60% ROI (+4.00% price move at 15x)
-            # Stop Loss: -30% ROI (-2.00% price move at 15x)
-            # Trailing: NO TRAILING (999.0) - Strict 1:2 Risk-to-Reward prevents whipsaws
+            # Target: +60% ROI (+7.50% price move at 8x)
+            # Stop Loss: -30% ROI (-3.75% price move at 8x)
+            # Fixed 2:1 Risk-to-Reward (No trailing shakeouts)
             t_delta = c_entry * (0.60 / lev)
             s_delta = c_entry * (0.30 / lev)
 
             if c_side == "LONG":
-                c_target = round(c_entry + t_delta, 6)
-                c_sl = round(c_entry - s_delta, 6)
+                c_target = round(c_entry + t_delta, 2)
+                c_sl = round(c_entry - s_delta, 2)
             else:
-                c_target = round(c_entry - t_delta, 6)
-                c_sl = round(c_entry + s_delta, 6)
+                c_target = round(c_entry - t_delta, 2)
+                c_sl = round(c_entry + s_delta, 2)
 
             res = self._place_order_cb(
-                symbol="DOGE/USDT",
+                symbol="SOL/USDT",
                 side=c_side,
                 entry_price=c_entry,
                 stop_loss=c_sl,
@@ -597,8 +630,9 @@ class AutonomousTradingAgent:
             self.last_trade_ts = now
             self.add_chat(
                 "agent",
-                f"[CONTINUOUS 15X RSI ENGINE] Study decided {c_side} ({bias}). "
-                f"Entered 15x @ ${c_entry:.4f} | Target: ${c_target:.4f} (+60% ROI) | SL: ${c_sl:.4f} (-30% ROI) | Margin: ${allocated_capital:.2f}",
+                f"[SOL 8x TREND-SURFER] {bias}. "
+                f"Entered 8x {c_side} @ ${c_entry:.2f} | Target: ${c_target:.2f} (+60% ROI / +7.5%) | "
+                f"SL: ${c_sl:.2f} (-30% ROI / -3.75%) | Margin: ${allocated_capital:.2f} ({int(m_pct*100)}% tier)",
                 action_tag="CONTINUOUS_ORDER",
             )
             return
@@ -615,9 +649,9 @@ class AutonomousTradingAgent:
         if not candidates:
             return
 
-        # Rank candidates by ADX trend strength with priority for high-momentum pairs (DOGE)
+        # Rank candidates by ADX trend strength with priority for high-momentum pairs (SOL)
         candidates.sort(
-            key=lambda x: float(x.get("adx", 20.0)) + (15.0 if "DOGE" in x.get("symbol", "") else 0.0),
+            key=lambda x: float(x.get("adx", 20.0)) + (15.0 if "SOL" in x.get("symbol", "") else 0.0),
             reverse=True,
         )
 
@@ -677,10 +711,10 @@ class AutonomousTradingAgent:
         if not valid_candidates:
             return
 
-        # Antigravity AI setup ranking: prioritize DOGE if active setup, else rank by effective confidence
-        doge_candidate = next((v for v in valid_candidates if "DOGE" in v["candidate"].get("symbol", "")), None)
-        if doge_candidate:
-            best_pick = doge_candidate
+        # Antigravity AI setup ranking: prioritize SOL if active setup, else rank by effective confidence
+        sol_candidate = next((v for v in valid_candidates if "SOL" in v["candidate"].get("symbol", "")), None)
+        if sol_candidate:
+            best_pick = sol_candidate
         else:
             best_pick = max(
                 valid_candidates,
@@ -783,6 +817,38 @@ class AutonomousTradingAgent:
             )
             self.add_chat("agent", reply, action_tag="TRACK_ONLY")
             return {"reply": reply, "state": self.get_state()}
+
+        # 4B. SOL 8x HOURLY TREND-SURFER CONTINUOUS COMMAND
+        if any(k in lower for k in ["continuous", "sol 8x", "trend surfer", "trend-surfer", "start continuous", "run continuous", "sol"]):
+            await self.start_task(
+                mode="CONTINUOUS_100",
+                symbols=["SOL/USDT"],
+                timeframe="1h",
+                leverage=8.0,
+                capital_allocation_pct=0.30,
+                target_roi_pct=0.60,
+                initial_sl_roi_pct=0.30,
+                trailing_sl_roi_pct=999.0,
+                max_open_positions=1,
+                auto_loop=True,
+                scan_interval_sec=5,
+            )
+            snapshot = await self._run_analysis_cb(["SOL/USDT"], "1h", force_refresh_research=False)
+            self.check_sl_tp_triggers(snapshot.get("signals", []))
+            await self._maybe_execute_auto_entry(snapshot.get("signals", []), snapshot=snapshot)
+            reply = (
+                "⚡ 'SOL 8x Hourly Trend-Surfer' activated!\n"
+                "• Asset: SOL/USDT (1-Hour Timeframe)\n"
+                "• Leverage: 8x Isolated Margin\n"
+                "• Sizing: Progressive Tiered De-Leveraging (30% -> 25% -> 20% -> 15% -> 10% -> 5% floor)\n"
+                "• Target: +60% ROI (+7.50% price move)\n"
+                "• Stop-Loss: -30% ROI (-3.75% price move)\n"
+                "• Single Trade Rule: Strictly 1 open position at a time (Continuous re-entry)\n"
+                "• Entry Engine: EMA 9 vs EMA 21 crossover aligned with 72-Hour Macro EMA.\n"
+                "Say 'stop' anytime to halt."
+            )
+            self.add_chat("agent", reply, action_tag="CONTINUOUS_START")
+            return {"reply": reply, "state": self.get_state(), "snapshot": snapshot}
 
         # 5. 50x LEVERAGE AUTONOMOUS CONTINUOUS LOOP COMMAND
         if any(k in lower for k in ["50x", "half", "70%", "auto trade", "autotrade", "start trading", "run bot", "take trade", "loop"]):

@@ -179,9 +179,9 @@
       <div class="hero-balance" id="val-balance">--.--</div>
       <div class="hero-sub" style="display:flex; justify-content:space-between; align-items:center;">
         <div>
-          <span>Option B: DOGE Exclusive</span>
+          <span>Strategy 1: SOL Trend-Surfer</span>
           <span>•</span>
-          <span>50x Leverage</span>
+          <span>8x Leverage</span>
         </div>
         <span id="sync-status" style="font-size:11px; color:#10b981; font-weight:normal;">● Live</span>
       </div>
@@ -189,9 +189,9 @@
 
     <!-- Controls -->
     <div class="controls">
-      <!-- Continuous 15x RSI Reversal Engine Button -->
-      <button class="btn" style="grid-column: span 2; background: linear-gradient(135deg, #f59e0b, #d97706); color: #000; font-weight: 800; font-size: 14px; padding: 15px; box-shadow: 0 4px 18px rgba(245, 158, 11, 0.4); border-radius: 14px; border: none; cursor: pointer;" onclick="startContinuous15xLive()">
-        ⚡ START CONTINUOUS 15x (+60% TP / -30% SL)
+      <!-- Continuous SOL 8x Hourly Trend-Surfer Button -->
+      <button class="btn" style="grid-column: span 2; background: linear-gradient(135deg, #10b981, #059669); color: #fff; font-weight: 800; font-size: 14px; padding: 15px; box-shadow: 0 4px 18px rgba(16, 185, 129, 0.4); border-radius: 14px; border: none; cursor: pointer;" onclick="startContinuous8xLive()">
+        ⚡ START SOL 8x TREND-SURFER (+60% TP / -30% SL)
       </button>
 
       <button class="btn btn-start" onclick="setMode('AUTO_TRADE')">
@@ -212,7 +212,7 @@
         <span class="badge" id="pos-side-badge">NO POSITION</span>
       </div>
       <div id="no-pos-msg" style="color: var(--subtext); font-size: 13px; text-align: center; padding: 14px 0;">
-        Scanning for high-conviction DOGE pullbacks...
+        Scanning for high-conviction SOL hourly trend setups...
       </div>
       <div id="pos-details" style="display: none;">
         <div class="pos-pnl" id="pos-pnl-val">+0.00%</div>
@@ -238,27 +238,27 @@
       </div>
     </div>
 
-    <!-- Live DOGE Market Signal -->
+    <!-- Live SOL Market Signal -->
     <div class="card">
       <div class="card-head">
-        <span class="card-title">DOGE/USDT Signal</span>
-        <span class="badge" id="doge-sig-badge">SCANNING</span>
+        <span class="card-title">SOL/USDT Signal</span>
+        <span class="badge" id="sol-sig-badge">SCANNING</span>
       </div>
       <div class="pos-row">
         <span class="pos-label">Live Price</span>
-        <span class="pos-val" id="doge-price">$0.0000</span>
+        <span class="pos-val" id="sol-price">$0.00</span>
       </div>
       <div class="pos-row">
         <span class="pos-label">RSI (14)</span>
-        <span class="pos-val" id="doge-rsi">--</span>
+        <span class="pos-val" id="sol-rsi">--</span>
       </div>
       <div class="pos-row">
         <span class="pos-label">ADX Trend Strength</span>
-        <span class="pos-val" id="doge-adx">--</span>
+        <span class="pos-val" id="sol-adx">--</span>
       </div>
       <div class="pos-row">
         <span class="pos-label">Nearest S / R</span>
-        <span class="pos-val" id="doge-sr">-- / --</span>
+        <span class="pos-val" id="sol-sr">-- / --</span>
       </div>
     </div>
 
@@ -399,10 +399,10 @@
         const liveDot = document.getElementById('live-dot');
         const mode = state.mode || 'IDLE';
         if (mode === 'CONTINUOUS_100') {
-          modeBadge.innerText = 'CONTINUOUS 15x';
+          modeBadge.innerText = 'SOL 8x SURFER';
           modeBadge.className = 'badge badge-live';
-          liveDot.style.background = '#f59e0b';
-          liveDot.style.boxShadow = '0 0 10px #f59e0b';
+          liveDot.style.background = '#10b981';
+          liveDot.style.boxShadow = '0 0 10px #10b981';
         } else if (mode === 'AUTO_TRADE') {
           modeBadge.innerText = 'AUTO TRADE';
           modeBadge.className = 'badge badge-live';
@@ -480,17 +480,17 @@
 
     async function pollSignal() {
       try {
-        const sigRes = await fetch('/api/signal?symbol=DOGE/USDT');
+        const sigRes = await fetch('/api/signal?symbol=SOL/USDT');
         const sig = await sigRes.json();
         latestSignal = sig;
 
         if (sig && sig.current_price) {
-          document.getElementById('doge-price').innerText = '$' + Number(sig.current_price).toFixed(4);
-          document.getElementById('doge-rsi').innerText = sig.rsi || '--';
-          document.getElementById('doge-adx').innerText = sig.adx || '--';
-          document.getElementById('doge-sr').innerText = (sig.nearest_support ? '$' + Number(sig.nearest_support).toFixed(4) : '--') + ' / ' + (sig.nearest_resistance ? '$' + Number(sig.nearest_resistance).toFixed(4) : '--');
+          document.getElementById('sol-price').innerText = '$' + Number(sig.current_price).toFixed(2);
+          document.getElementById('sol-rsi').innerText = sig.rsi || '--';
+          document.getElementById('sol-adx').innerText = sig.adx || '--';
+          document.getElementById('sol-sr').innerText = (sig.nearest_support ? '$' + Number(sig.nearest_support).toFixed(2) : '--') + ' / ' + (sig.nearest_resistance ? '$' + Number(sig.nearest_resistance).toFixed(2) : '--');
           
-          const sigBadge = document.getElementById('doge-sig-badge');
+          const sigBadge = document.getElementById('sol-sig-badge');
           sigBadge.innerText = sig.signal || 'NEUTRAL';
           if (sig.signal && sig.signal.includes('BUY')) {
             sigBadge.className = 'badge tag-win';
@@ -505,8 +505,8 @@
       }
     }
 
-    async function startContinuous15xLive() {
-      const ok = confirm('⚡ Launch Continuous 15x RSI Reversal Engine on DOGE?\n\n• Target: +60% ROI (+4.0% move)\n• Stop Loss: -30% ROI (-2.0% move)\n• Leverage: 15x Isolated\n• Sizing: 30% Real Capital per trade\n\nClick OK to launch with REAL MONEY on CoinDCX Futures!');
+    async function startContinuous8xLive() {
+      const ok = confirm('⚡ Launch "SOL 8x Hourly Trend-Surfer"?\n\n• Asset: SOL/USDT (1-Hour Timeframe)\n• Target: +60% ROI (+7.50% move)\n• Stop Loss: -30% ROI (-3.75% move)\n• Leverage: 8x Isolated\n• Sizing: Progressive Tiered De-Leveraging (30% -> 5% floor)\n• Single Position: Strictly 1 trade at a time (Continuous re-entry)\n\nClick OK to launch with REAL MONEY on CoinDCX Futures!');
       if (!ok) return;
 
       try {
@@ -520,13 +520,15 @@
         isLiveArmed = armData.live_trading_armed;
         updateArmButton();
 
-        // 2. Launch Continuous Engine
+        // 2. Launch Continuous SOL 8x Engine
         await fetch('/api/agent/task', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             mode: 'CONTINUOUS_100',
-            leverage: 15,
+            symbols: ['SOL/USDT'],
+            timeframe: '1h',
+            leverage: 8,
             target_roi_pct: 0.60,
             initial_sl_roi_pct: 0.30,
             trailing_sl_roi_pct: 999.0,
@@ -537,7 +539,7 @@
         await pollPortfolioAndState();
         await pollCoinDCX();
       } catch (e) {
-        alert('Failed to start continuous engine: ' + e);
+        alert('Failed to start SOL 8x continuous engine: ' + e);
       }
     }
 

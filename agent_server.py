@@ -122,6 +122,7 @@ def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
     df['ema_9'] = c.ewm(span=9, adjust=False).mean()
     df['ema_21'] = c.ewm(span=21, adjust=False).mean()
     df['ema_50'] = c.ewm(span=50, adjust=False).mean()
+    df['ema_72'] = c.ewm(span=72, adjust=False).mean()
     df['ema_200'] = c.ewm(span=200, adjust=False).mean()
 
     # EMA 50 Slope over 4 bars (1 hour) to detect trend angle
@@ -340,6 +341,7 @@ def generate_signal(df: pd.DataFrame, symbol: str) -> dict:
         "ema_9": round(ema_fast, 2),
         "ema_21": round(ema_slow, 2),
         "ema_50": round(ema_trend, 2),
+        "ema_72": round(float(latest['ema_72']), 2) if 'ema_72' in latest else round(ema_trend, 2),
         "ema_200": round(ema_macro, 2),
         "adx": round(adx, 2),
         "atr": round(atr, 4 if price < 1.0 else 2),
@@ -355,9 +357,9 @@ def generate_signal(df: pd.DataFrame, symbol: str) -> dict:
 # MARKET DATA FETCHING (FREE PUBLIC SOURCES - ASYNC)
 # ---------------------------------------------------------
 async def fetch_ohlcv_data(
-    symbol: str = "DOGE/USDT",
-    timeframe: str = "15m",
-    limit: int = 60,
+    symbol: str = "SOL/USDT",
+    timeframe: str = "1h",
+    limit: int = 100,
     client: Optional[httpx.AsyncClient] = None,
 ) -> pd.DataFrame:
     """Fetches real candles concurrently via async httpx from Binance Vision / Bybit with fallback."""
@@ -512,14 +514,14 @@ def health_check():
 
 @app.get("/api/simultaneous")
 async def get_simultaneous_results(
-    symbols: str = "DOGE/USDT",
-    timeframe: str = "15m",
+    symbols: str = "SOL/USDT",
+    timeframe: str = "1h",
     refresh: bool = False,
 ):
     """Returns simultaneous technical signals + live news + macro sentiment + AI synthesis."""
     symbol_list = [s.strip().upper() for s in symbols.split(",") if s.strip()]
     if not symbol_list:
-        symbol_list = ["DOGE/USDT"]
+        symbol_list = ["SOL/USDT"]
     return await run_simultaneous_analysis(symbol_list, timeframe, force_refresh_research=refresh)
 
 
@@ -930,7 +932,7 @@ async def control_agent_task(req: TaskRequest):
     if mode_upper == "CONTINUOUS_100":
         trading_agent.add_chat(
             "alert",
-            "⚡ CONTINUOUS 15X RSI ENGINE ACTIVATED: Target +60% ROI (+4.0% move) | SL -30% (-2.0% move) | Fixed 1:2 R:R (No trailing shakeouts) | 15x Isolated Leverage | Sizing: 30% Capital. Back-to-back continuous execution on DOGE.",
+            "⚡ SOL 8X HOURLY TREND-SURFER ACTIVATED: Target +60% ROI (+7.5% move) | SL -30% (-3.75% move) | Fixed 2:1 R:R | 8x Isolated Leverage | Sizing: Progressive Tiered De-Leveraging (30% -> 5% floor). Continuous 1-trade execution on SOL.",
             action_tag="CONTINUOUS_START",
         )
     else:
@@ -964,7 +966,7 @@ async def get_coindcx_status():
         "connected": connected,
         "exchange": "CoinDCX",
         "account_name": first_name,
-        "futures_market": "B-DOGE_USDT",
+        "futures_market": "B-SOL_USDT",
         "live_trading_armed": coindcx.live_trading_enabled,
         "safety_latch": "LOCKED (Paper simulation mode)" if not coindcx.live_trading_enabled else "UNLOCKED (LIVE EXECUTION)",
         "open_futures_positions": len([p for p in futures_info.get("data", []) if float(p.get("active_pos", 0.0) or 0.0) != 0.0]) if futures_info.get("status") == "success" else 0
