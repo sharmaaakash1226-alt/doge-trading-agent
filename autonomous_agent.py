@@ -42,6 +42,21 @@ class AutonomousTradingAgent:
         self.consecutive_losses: int = 0
         self.whipsaw_cooldown_until: float = 0.0
 
+        # Strategy Guardian Health Monitoring Engine
+        self.peak_balance: float = 100.0
+        self.strategy_consecutive_losses: int = 0
+        self.recent_closed_trades: List[Dict[str, Any]] = []
+        self.strategy_health: Dict[str, Any] = {
+            "status": "HEALTHY",  # HEALTHY | WARNING | DANGER
+            "rolling_win_rate_pct": 50.0,
+            "rolling_trades_count": 0,
+            "consecutive_losses": 0,
+            "current_drawdown_pct": 0.0,
+            "peak_balance": 100.0,
+            "reasons": [],
+            "expired": False,
+        }
+
         self.last_scan_ts: float = 0.0
         self.next_scan_ts: float = 0.0
         self.last_trade_ts: float = 0.0
@@ -85,10 +100,146 @@ class AutonomousTradingAgent:
             self.chat_history = self.chat_history[-80:]
         return entry
 
+    def evaluate_strategy_health(self, current_balance: Optional[float] = None) -> Dict[str, Any]:
+        """
+        Strategy Guardian Health Monitor:
+        Metrics & Thresholds:
+          1. Rolling Win Rate (Last 50 trades):
+             - Healthy: >= 34%
+             - Warning: 30% - 33.9%
+             - Danger:  < 28% (evaluated when trades >= 15)
+          2. Consecutive Losses:
+             - Healthy: <= 10 trades
+             - Warning: 11 - 12 trades
+             - Danger:  >= 14 trades
+          3. Max Drawdown from Peak:
+             - Healthy: < 45%
+             - Warning: 45% - 55%
+             - Danger:  > 60%
+        
+        Action if DANGER:
+          - Automatically HALTS trading immediately (mode = IDLE, _running = False)
+          - Sets expired = True
+          - Issues Critical Red Alert
+        """
+        if current_balance is None and self._get_portfolio_cb:
+            port = self._get_portfolio_cb()
+            current_balance = float(port.get("balance_usdt", 100.0))
+        elif current_balance is None:
+            current_balance = 100.0
+
+        if current_balance > self.peak_balance:
+            self.peak_balance = current_balance
+
+        # Calculate Drawdown from Peak
+        if self.peak_balance > 0:
+            drawdown_pct = max(0.0, round(((self.peak_balance - current_balance) / self.peak_balance) * 100.0, 2))
+        else:
+            drawdown_pct = 0.0
+
+        # Calculate Rolling Win Rate over last 50 trades
+        recent_50 = self.recent_closed_trades[-50:]
+        trades_count = len(recent_50)
+        wins = sum(1 for t in recent_50 if t.get("pnl", 0) > 0)
+        rolling_wr = round((wins / trades_count) * 100.0, 1) if trades_count > 0 else 50.0
+
+        consec_losses = self.strategy_consecutive_losses
+
+        # Evaluate Danger Condition
+        danger_reasons = []
+        if drawdown_pct > 60.0:
+            danger_reasons.append(f"Peak Drawdown exceeded 60% (Current DD: {drawdown_pct:.1f}%)")
+        if consec_losses >= 14:
+            danger_reasons.append(f"Consecutive loss streak reached Danger threshold ({consec_losses} losses >= 14)")
+        if trades_count >= 15 and rolling_wr < 28.0:
+            danger_reasons.append(f"Rolling Win Rate collapsed below 28% (Current WR: {rolling_wr:.1f}% across {trades_count} trades)")
+
+        # Evaluate Warning Condition
+        warning_reasons = []
+        if not danger_reasons:
+            if 45.0 <= drawdown_pct <= 60.0:
+                warning_reasons.append(f"Elevated Drawdown ({drawdown_pct:.1f}% between 45% - 60%)")
+            if 11 <= consec_losses < 14:
+                warning_reasons.append(f"Elevated loss streak ({consec_losses} consecutive losses)")
+            if trades_count >= 15 and 28.0 <= rolling_wr <= 33.9:
+                warning_reasons.append(f"Rolling Win Rate compressed to warning zone ({rolling_wr:.1f}%)")
+
+        prev_status = self.strategy_health.get("status", "HEALTHY")
+
+        if danger_reasons:
+            status = "DANGER"
+            is_expired = True
+            reasons = danger_reasons
+            
+            # AUTOMATIC CIRCUIT BREAKER: HALT TRADING IMMEDIATELY!
+            if self._running or self.mode != "IDLE":
+                self._running = False
+                self.mode = "IDLE"
+                self.add_chat(
+                    "alert",
+                    f"🛑 [CIRCUIT BREAKER TRIGGERED] STRATEGY EXPIRED & TRADING AUTOMATICALLY HALTED! "
+                    f"Danger Zone breached: {'; '.join(danger_reasons)}. "
+                    f"RED SIGNAL: Current market regime has invalidated the strategy edge. Change or re-calibrate strategy before resuming.",
+                    action_tag="STRATEGY_EXPIRED",
+                )
+        elif warning_reasons:
+            status = "WARNING"
+            is_expired = False
+            reasons = warning_reasons
+            if prev_status != "WARNING":
+                self.add_chat(
+                    "alert",
+                    f"⚠️ [STRATEGY HEALTH WARNING] Strategy entered Warning Zone: {'; '.join(warning_reasons)}. "
+                    f"Turbulence elevated. Monitor closely.",
+                    action_tag="STRATEGY_WARNING",
+                )
+        else:
+            status = "HEALTHY"
+            is_expired = False
+            reasons = []
+
+        self.strategy_health = {
+            "status": status,
+            "rolling_win_rate_pct": rolling_wr,
+            "rolling_trades_count": trades_count,
+            "consecutive_losses": consec_losses,
+            "current_drawdown_pct": drawdown_pct,
+            "peak_balance": round(self.peak_balance, 2),
+            "reasons": reasons,
+            "expired": is_expired,
+        }
+        return self.strategy_health
+
+    def reset_strategy_guardian(self):
+        """Resets the Strategy Guardian health metrics after user recalibrates or changes strategy."""
+        current_balance = 100.0
+        if self._get_portfolio_cb:
+            port = self._get_portfolio_cb()
+            current_balance = float(port.get("balance_usdt", 100.0))
+        self.peak_balance = current_balance
+        self.strategy_consecutive_losses = 0
+        self.recent_closed_trades = []
+        self.strategy_health = {
+            "status": "HEALTHY",
+            "rolling_win_rate_pct": 50.0,
+            "rolling_trades_count": 0,
+            "consecutive_losses": 0,
+            "current_drawdown_pct": 0.0,
+            "peak_balance": round(self.peak_balance, 2),
+            "reasons": [],
+            "expired": False,
+        }
+        self.add_chat(
+            "agent",
+            "Strategy Guardian metrics reset. New strategy baseline calibrated.",
+            action_tag="GUARDIAN_RESET",
+        )
+
     def get_state(self) -> Dict[str, Any]:
         now = time.time()
         gap_remaining = max(0, int(self.trade_gap_sec - (now - self.last_trade_ts))) if self.last_trade_ts > 0 else 0
         next_scan_in = max(0, int(self.next_scan_ts - now)) if self._running and self.next_scan_ts > 0 else 0
+        self.evaluate_strategy_health()
         return {
             "mode": self.mode,
             "running": self._running,
@@ -108,6 +259,7 @@ class AutonomousTradingAgent:
             "auto_loop": self.auto_loop,
             "total_auto_entries": self.total_auto_entries,
             "total_auto_exits": self.total_auto_exits,
+            "strategy_health": self.strategy_health,
             "chat_history": self.chat_history[-30:],
         }
 
@@ -365,9 +517,37 @@ class AutonomousTradingAgent:
                             action_tag="MEMORY_WIN",
                         )
 
-                    # IMMEDIATELY TRIGGER RE-RESEARCH & RE-ENTRY FOR CONTINUOUS CYCLE
+                    # --- STRATEGY GUARDIAN HEALTH ENGINE ---
+                    new_bal = float(res.get("new_balance", 0.0))
+                    if pnl > 0:
+                        self.strategy_consecutive_losses = 0
+                    else:
+                        self.strategy_consecutive_losses += 1
+
+                    self.recent_closed_trades.append({
+                        "pnl": pnl,
+                        "pnl_pct": pnl_pct,
+                        "timestamp": time.time(),
+                        "is_win": pnl > 0
+                    })
+                    if len(self.recent_closed_trades) > 100:
+                        self.recent_closed_trades = self.recent_closed_trades[-100:]
+
+                    health = self.evaluate_strategy_health(new_bal)
+
+                    # IMMEDIATELY TRIGGER RE-RESEARCH & RE-ENTRY FOR CONTINUOUS CYCLE (IF NOT EXPIRED)
                     if self._running and self.mode in ("AUTO_TRADE", "CONTINUOUS_100") and self.auto_loop:
-                        asyncio.create_task(self._trigger_immediate_research_and_reentry())
+                        if health.get("status") == "DANGER" or health.get("expired"):
+                            self._running = False
+                            self.mode = "IDLE"
+                            self.add_chat(
+                                "alert",
+                                f"🛑 [CIRCUIT BREAKER] Trade exit pushed strategy into DANGER ZONE: {'; '.join(health.get('reasons', []))}. "
+                                f"Trading automatically HALTED. Please change or re-calibrate strategy.",
+                                action_tag="STRATEGY_EXPIRED",
+                            )
+                        else:
+                            asyncio.create_task(self._trigger_immediate_research_and_reentry())
 
         return closed_events
 
@@ -542,6 +722,11 @@ class AutonomousTradingAgent:
         snapshot: Optional[Dict[str, Any]] = None,
     ):
         if not self._get_portfolio_cb or not self._place_order_cb:
+            return
+
+        # Check Strategy Guardian Health status before entry
+        health = self.evaluate_strategy_health()
+        if health.get("status") == "DANGER" or health.get("expired"):
             return
 
         now = time.time()
@@ -849,6 +1034,26 @@ class AutonomousTradingAgent:
             )
             self.add_chat("agent", reply, action_tag="CONTINUOUS_START")
             return {"reply": reply, "state": self.get_state(), "snapshot": snapshot}
+
+        # 4C. STRATEGY GUARDIAN HEALTH STATUS & RESET COMMANDS
+        if any(k in lower for k in ["guardian", "health", "vital", "vitals", "status of strategy", "strategy status"]):
+            health = self.evaluate_strategy_health()
+            reasons_str = f"\n• Active Flags: {'; '.join(health['reasons'])}" if health['reasons'] else ""
+            reply = (
+                f"🛡️ Strategy Guardian Status: {health['status']}\n"
+                f"• Rolling Win Rate (Last 50): {health['rolling_win_rate_pct']:.1f}% ({health['rolling_trades_count']} trades analyzed)\n"
+                f"• Consecutive Loss Streak: {health['consecutive_losses']} trades\n"
+                f"• Peak Drawdown: {health['current_drawdown_pct']:.1f}% (from peak ${health['peak_balance']:.2f})\n"
+                f"• Strategy Expired / Halted: {'YES (RED SIGNAL)' if health['expired'] else 'NO'}"
+                f"{reasons_str}"
+            )
+            self.add_chat("agent", reply, action_tag="GUARDIAN_STATUS")
+            return {"reply": reply, "state": self.get_state()}
+
+        if any(k in lower for k in ["reset guardian", "reset health", "recalibrate strategy", "unblock strategy"]):
+            self.reset_strategy_guardian()
+            reply = "🛡️ Strategy Guardian reset! Health status restored to HEALTHY with a clean calibration baseline."
+            return {"reply": reply, "state": self.get_state()}
 
         # 5. 50x LEVERAGE AUTONOMOUS CONTINUOUS LOOP COMMAND
         if any(k in lower for k in ["50x", "half", "70%", "auto trade", "autotrade", "start trading", "run bot", "take trade", "loop"]):

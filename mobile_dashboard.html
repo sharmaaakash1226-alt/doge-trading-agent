@@ -190,9 +190,21 @@
     <!-- Controls -->
     <div class="controls">
       <!-- Continuous SOL 8x Hourly Trend-Surfer Button -->
-      <button class="btn" style="grid-column: span 2; background: linear-gradient(135deg, #10b981, #059669); color: #fff; font-weight: 800; font-size: 14px; padding: 15px; box-shadow: 0 4px 18px rgba(16, 185, 129, 0.4); border-radius: 14px; border: none; cursor: pointer;" onclick="startContinuous8xLive()">
+      <button class="btn" id="btn-trend-surfer" style="grid-column: span 2; background: linear-gradient(135deg, #10b981, #059669); color: #fff; font-weight: 800; font-size: 14px; padding: 15px; box-shadow: 0 4px 18px rgba(16, 185, 129, 0.4); border-radius: 14px; border: none; cursor: pointer;" onclick="startContinuous8xLive()">
         ⚡ START SOL 8x TREND-SURFER (+60% TP / -30% SL)
       </button>
+
+      <!-- Strategy Guardian Health Banner (Shows Warning / Danger below strategy button) -->
+      <div id="guardian-banner" style="grid-column: span 2; display: flex; flex-direction: column; gap: 4px; padding: 10px 14px; border-radius: 12px; font-size: 12px; margin-bottom: 6px; transition: all 0.3s ease; background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.3); color: #34d399;">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span id="guardian-dot" style="width: 9px; height: 9px; border-radius: 50%; background: #10b981; display: inline-block;"></span>
+            <span id="guardian-badge" style="font-weight: 800; letter-spacing: 0.5px;">● HEALTHY ZONE (KEEP RUNNING)</span>
+          </div>
+          <span id="guardian-stats" style="font-size: 11px; opacity: 0.9;">WR: 50.0% | Streak: 0L | DD: 0.0%</span>
+        </div>
+        <div id="guardian-desc" style="font-size: 11px; opacity: 0.9; display: none; padding-top: 4px; border-top: 1px solid rgba(255,255,255,0.1);"></div>
+      </div>
 
       <button class="btn btn-start" onclick="setMode('AUTO_TRADE')">
         ▶ NORMAL AUTO (+80%)
@@ -415,6 +427,63 @@
           liveDot.style.boxShadow = 'none';
         }
 
+        // 3B. Strategy Guardian Health Engine
+        const health = state.strategy_health || {};
+        const guardianBanner = document.getElementById('guardian-banner');
+        const guardianBadge = document.getElementById('guardian-badge');
+        const guardianDot = document.getElementById('guardian-dot');
+        const guardianStats = document.getElementById('guardian-stats');
+        const guardianDesc = document.getElementById('guardian-desc');
+        const btnSurfer = document.getElementById('btn-trend-surfer');
+
+        const wrStr = health.rolling_win_rate_pct != null ? health.rolling_win_rate_pct.toFixed(1) + '%' : '--%';
+        const streakStr = (health.consecutive_losses || 0) + 'L';
+        const ddStr = (health.current_drawdown_pct || 0).toFixed(1) + '%';
+        guardianStats.innerText = `WR: ${wrStr} | Streak: ${streakStr} | DD: ${ddStr}`;
+
+        if (health.status === 'DANGER' || health.expired) {
+          guardianBanner.style.background = 'rgba(239, 68, 68, 0.25)';
+          guardianBanner.style.border = '2px solid #ef4444';
+          guardianBanner.style.color = '#fca5a5';
+          guardianDot.style.background = '#ef4444';
+          guardianDot.style.boxShadow = '0 0 10px #ef4444';
+          guardianBadge.innerText = '🛑 DANGER ZONE: STRATEGY EXPIRED (HALTED)';
+          guardianDesc.style.display = 'block';
+          guardianDesc.innerHTML = '<strong>RED SIGNAL:</strong> ' + (health.reasons && health.reasons.length ? health.reasons.join(' | ') : 'Critical limits breached') + '. <br><em>Current market regime has invalidated edge. Change strategy before resuming.</em>';
+          if (btnSurfer) {
+            btnSurfer.style.opacity = '0.5';
+            btnSurfer.style.cursor = 'not-allowed';
+            btnSurfer.innerText = '🛑 STRATEGY EXPIRED (TRADING BLOCKED)';
+          }
+        } else if (health.status === 'WARNING') {
+          guardianBanner.style.background = 'rgba(245, 158, 11, 0.2)';
+          guardianBanner.style.border = '1px solid #f59e0b';
+          guardianBanner.style.color = '#fcd34d';
+          guardianDot.style.background = '#f59e0b';
+          guardianDot.style.boxShadow = '0 0 8px #f59e0b';
+          guardianBadge.innerText = '⚠️ WARNING ZONE: ELEVATED TURBULENCE (PAUSE & CHECK)';
+          guardianDesc.style.display = 'block';
+          guardianDesc.innerHTML = '<strong>WARNING:</strong> ' + (health.reasons && health.reasons.length ? health.reasons.join(' | ') : 'Elevated drawdown/losses') + '. Strategy entering turbulence.';
+          if (btnSurfer) {
+            btnSurfer.style.opacity = '1.0';
+            btnSurfer.style.cursor = 'pointer';
+            btnSurfer.innerText = '⚠️ CAUTION: SOL 8x IN WARNING ZONE';
+          }
+        } else {
+          guardianBanner.style.background = 'rgba(16, 185, 129, 0.12)';
+          guardianBanner.style.border = '1px solid rgba(16, 185, 129, 0.3)';
+          guardianBanner.style.color = '#34d399';
+          guardianDot.style.background = '#10b981';
+          guardianDot.style.boxShadow = 'none';
+          guardianBadge.innerText = '● HEALTHY ZONE (KEEP RUNNING)';
+          guardianDesc.style.display = 'none';
+          if (btnSurfer) {
+            btnSurfer.style.opacity = '1.0';
+            btnSurfer.style.cursor = 'pointer';
+            btnSurfer.innerText = '⚡ START SOL 8x TREND-SURFER (+60% TP / -30% SL)';
+          }
+        }
+
         // 4. Active Position
         const positions = port.positions || [];
         const posDetails = document.getElementById('pos-details');
@@ -506,6 +575,17 @@
     }
 
     async function startContinuous8xLive() {
+      // Check Strategy Guardian Health status first
+      try {
+        const stateRes = await fetch('/api/agent/state');
+        const state = await stateRes.json();
+        const health = state.strategy_health || {};
+        if (health.status === 'DANGER' || health.expired) {
+          alert('🛑 TRADING BLOCKED: Strategy is in DANGER ZONE (Strategy Expired)!\n\n• Reason: ' + (health.reasons && health.reasons.length ? health.reasons.join('\n• ') : 'Critical risk threshold breached') + '\n\nRED SIGNAL: Current market regime has invalidated the strategy edge. Please change or re-calibrate your strategy before resuming.');
+          return;
+        }
+      } catch (err) {}
+
       const ok = confirm('⚡ Launch "SOL 8x Hourly Trend-Surfer"?\n\n• Asset: SOL/USDT (1-Hour Timeframe)\n• Target: +60% ROI (+7.50% move)\n• Stop Loss: -30% ROI (-3.75% move)\n• Leverage: 8x Isolated\n• Sizing: Progressive Tiered De-Leveraging (30% -> 5% floor)\n• Single Position: Strictly 1 trade at a time (Continuous re-entry)\n\nClick OK to launch with REAL MONEY on CoinDCX Futures!');
       if (!ok) return;
 
