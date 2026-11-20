@@ -113,13 +113,14 @@ class AutonomousTradingAgent:
              - Warning: 11 - 12 trades
              - Danger:  >= 14 trades
           3. Max Drawdown from Peak:
-             - Healthy: < 45%
-             - Warning: 45% - 55%
-             - Danger:  > 60%
+             - Healthy: < 35%
+             - Warning: 35% - 49.9%
+             - Danger:  >= 50% (HARD CIRCUIT BREAKER)
         
         Action if DANGER:
           - Automatically HALTS trading immediately (mode = IDLE, _running = False)
           - Sets expired = True
+          - PANIC CLOSES every open position immediately at market
           - Issues Critical Red Alert
         """
         if current_balance is None and self._get_portfolio_cb:
@@ -145,20 +146,20 @@ class AutonomousTradingAgent:
 
         consec_losses = self.strategy_consecutive_losses
 
-        # Evaluate Danger Condition
+        # Evaluate Danger Condition: 50% Max Drawdown Circuit Breaker
         danger_reasons = []
-        if drawdown_pct > 60.0:
-            danger_reasons.append(f"Peak Drawdown exceeded 60% (Current DD: {drawdown_pct:.1f}%)")
+        if drawdown_pct >= 50.0:
+            danger_reasons.append(f"Peak Drawdown reached 50% Danger threshold (Current DD: {drawdown_pct:.1f}% >= 50.0%)")
         if consec_losses >= 14:
             danger_reasons.append(f"Consecutive loss streak reached Danger threshold ({consec_losses} losses >= 14)")
         if trades_count >= 15 and rolling_wr < 28.0:
             danger_reasons.append(f"Rolling Win Rate collapsed below 28% (Current WR: {rolling_wr:.1f}% across {trades_count} trades)")
 
-        # Evaluate Warning Condition
+        # Evaluate Warning Condition (35% to 49.9% DD)
         warning_reasons = []
         if not danger_reasons:
-            if 45.0 <= drawdown_pct <= 60.0:
-                warning_reasons.append(f"Elevated Drawdown ({drawdown_pct:.1f}% between 45% - 60%)")
+            if 35.0 <= drawdown_pct < 50.0:
+                warning_reasons.append(f"Elevated Drawdown ({drawdown_pct:.1f}% between 35% - 50%)")
             if 11 <= consec_losses < 14:
                 warning_reasons.append(f"Elevated loss streak ({consec_losses} consecutive losses)")
             if trades_count >= 15 and 28.0 <= rolling_wr <= 33.9:
@@ -171,15 +172,30 @@ class AutonomousTradingAgent:
             is_expired = True
             reasons = danger_reasons
             
-            # AUTOMATIC CIRCUIT BREAKER: HALT TRADING IMMEDIATELY!
+            # AUTOMATIC CIRCUIT BREAKER: HALT TRADING IMMEDIATELY & PANIC CLOSE ALL OPEN POSITIONS!
+            halted_now = False
             if self._running or self.mode != "IDLE":
                 self._running = False
                 self.mode = "IDLE"
+                halted_now = True
+
+            # PANIC CLOSE EVERY OPEN POSITION IMMEDIATELY!
+            closed_count = 0
+            if self._get_portfolio_cb and self._close_position_cb:
+                port = self._get_portfolio_cb()
+                for p in list(port.get("positions", [])):
+                    if p.get("status") == "OPEN":
+                        exit_p = float(p.get("current_price", p.get("entry_price", 0.0)))
+                        self._close_position_cb(p["id"], exit_p)
+                        closed_count += 1
+
+            if halted_now or closed_count > 0:
                 self.add_chat(
                     "alert",
-                    f"🛑 [CIRCUIT BREAKER TRIGGERED] STRATEGY EXPIRED & TRADING AUTOMATICALLY HALTED! "
+                    f"🛑 [CIRCUIT BREAKER TRIGGERED] 50% DRAWDOWN DANGER ZONE REACHED! "
+                    f"Trading AUTOMATICALLY HALTED & {closed_count} open position(s) PANIC CLOSED! "
                     f"Danger Zone breached: {'; '.join(danger_reasons)}. "
-                    f"RED SIGNAL: Current market regime has invalidated the strategy edge. Change or re-calibrate strategy before resuming.",
+                    f"RED SIGNAL: Current market regime has invalidated the strategy edge. Capital preserved safely in cash.",
                     action_tag="STRATEGY_EXPIRED",
                 )
         elif warning_reasons:
@@ -388,6 +404,8 @@ class AutonomousTradingAgent:
             step_size_roi = float(pos.get("trailing_sl_roi_pct", self.trailing_sl_roi_pct))
 
             hit_reason = None
+            exec_exit_price = live_price
+
             if side == "LONG":
                 profit_roi = ((live_price - entry_price) / entry_price) * leverage
                 pos["peak_profit_roi"] = max(float(pos.get("peak_profit_roi", 0.0)), profit_roi)
@@ -420,13 +438,15 @@ class AutonomousTradingAgent:
                         action_tag="TRAILING_STEP",
                     )
 
-                # INSTANT TOUCH / CROSS TRIGGER (DO NOT WAIT FOR EXACT PRICE):
+                # INSTANT TOUCH / SLIPPAGE EXIT (DO NOT WAIT FOR EXACT PRICE):
                 # If price touched or surpassed target at any point, exit immediately at market price!
-                if live_price >= target_p or pos["peak_price"] >= target_p:
+                if live_price >= target_p or high_price >= target_p or pos["peak_price"] >= target_p:
                     hit_reason = "TARGET_HIT"
+                    exec_exit_price = live_price
                 # If price touched or fell below stop loss at any point, exit immediately at market price!
-                elif live_price <= current_sl or pos["trough_price"] <= current_sl:
+                elif live_price <= current_sl or low_price <= current_sl or pos["trough_price"] <= current_sl:
                     hit_reason = "TRAILING_SL_HIT" if current_sl_roi > -initial_sl_roi else "STOP_LOSS_HIT"
+                    exec_exit_price = live_price
 
             else:  # SHORT
                 profit_roi = ((entry_price - live_price) / entry_price) * leverage
@@ -460,28 +480,31 @@ class AutonomousTradingAgent:
                         action_tag="TRAILING_STEP",
                     )
 
-                # INSTANT TOUCH / CROSS TRIGGER (DO NOT WAIT FOR EXACT PRICE):
+                # INSTANT TOUCH / SLIPPAGE EXIT (DO NOT WAIT FOR EXACT PRICE):
                 # If short price touched or dropped below target at any point, exit immediately at market price!
-                if live_price <= target_p or pos["trough_price"] <= target_p:
+                if live_price <= target_p or low_price <= target_p or pos["trough_price"] <= target_p:
                     hit_reason = "TARGET_HIT"
+                    exec_exit_price = live_price
                 # If short price touched or spiked above stop loss at any point, exit immediately at market price!
-                elif live_price >= current_sl or pos["peak_price"] >= current_sl:
+                elif live_price >= current_sl or high_price >= current_sl or pos["peak_price"] >= current_sl:
                     hit_reason = "TRAILING_SL_HIT" if current_sl_roi > -initial_sl_roi else "STOP_LOSS_HIT"
+                    exec_exit_price = live_price
 
             if hit_reason:
-                res = self._close_position_cb(pos["id"], live_price)
+                res = self._close_position_cb(pos["id"], exec_exit_price)
                 if res.get("status") == "success":
                     self.total_auto_exits += 1
                     pnl = res.get("pnl", 0.0)
                     pnl_pct = res.get("pnl_pct", 0.0)
                     tag = "AUTO_TP" if hit_reason == "TARGET_HIT" else ("AUTO_TRAIL" if hit_reason == "TRAILING_SL_HIT" else "AUTO_SL")
                     msg = (
-                        f"[{hit_reason} • INSTANT TOUCH EXIT] Price touched/crossed level. "
-                        f"Executed immediate MARKET EXIT on {side} {sym} at ${live_price:.4f} "
-                        f"(Target: ${target_p:.4f}, SL: ${current_sl:.4f}, Entry: ${entry_price:.4f}) | "
+                        f"[{hit_reason} • INSTANT TOUCH EXIT] Price touched/crossed level! "
+                        f"Executed immediate MARKET EXIT on {side} {sym} at ${exec_exit_price:.4f} "
+                        f"(No exact price wait | Target: ${target_p:.4f}, SL: ${current_sl:.4f}, Entry: ${entry_price:.4f}) | "
                         f"PnL: ${pnl:+.2f} ({pnl_pct:+.2f}%) | New Balance: ${res.get('new_balance', 0):.2f}"
                     )
                     self.add_chat("alert", msg, action_tag=tag)
+                    closed_events.append({"pos_id": pos["id"], "reason": hit_reason, "pnl": pnl})
                     closed_events.append({"pos_id": pos["id"], "reason": hit_reason, "pnl": pnl})
 
                     # --- SELF-LEARNING MEMORY ENGINE HOOK ---
