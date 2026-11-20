@@ -76,8 +76,8 @@ class AutonomousTradingAgent:
 
         self.add_chat(
             "agent",
-            "Autonomous Trading Agent online. Status: IDLE. Ready for 'SOL 8x Hourly Trend-Surfer' "
-            "(Progressive Tiered Margin 30% -> 5% floor, 8x Leverage, +60% TP, -30% SL, 1 trade at a time).",
+            "Autonomous Trading Agent online. Status: IDLE. Ready for 'APT 8x Hourly RSI Trend-Pullback' "
+            "(Progressive Tiered Margin 30% -> 5% floor, 8x Leverage, +50% TP, -25% SL, 1 trade at a time).",
             action_tag="SYSTEM_READY",
         )
 
@@ -287,11 +287,11 @@ class AutonomousTradingAgent:
             mode = "RESEARCH_ONLY"
 
         if mode == "CONTINUOUS_100":
-            self.symbols = ["SOL/USDT"]
+            self.symbols = ["APT/USDT"]
             self.timeframe = "1h"
             self.leverage = 8.0
-            self.target_roi_pct = 0.60  # +60% Target ROI (+7.50% price move at 8x)
-            self.initial_sl_roi_pct = 0.30  # -30% Stop Loss (-3.75% price move at 8x)
+            self.target_roi_pct = 0.50  # +50% Target ROI (+6.25% price move at 8x)
+            self.initial_sl_roi_pct = 0.25  # -25% Stop Loss (-3.125% price move at 8x)
             self.trailing_sl_roi_pct = 999.0  # Strict 2:1 RR (No trailing shakeouts)
             self.auto_loop = True
             self.max_open_positions = 1
@@ -752,14 +752,14 @@ class AutonomousTradingAgent:
             return
 
         # -------------------------------------------------------------
-        # CONTINUOUS: "SOL 8x HOURLY TREND-SURFER" (TIERED DE-LEVERAGING)
+        # CONTINUOUS: "APT 8x HOURLY RSI TREND-PULLBACK" (TIERED DE-LEVERAGING)
         # -------------------------------------------------------------
         if self.mode == "CONTINUOUS_100":
-            sol_sig = next((s for s in signals if "SOL" in s.get("symbol", "")), signals[0] if signals else None)
-            if not sol_sig:
+            apt_sig = next((s for s in signals if "APT" in s.get("symbol", "")), signals[0] if signals else None)
+            if not apt_sig:
                 return
 
-            c_entry = float(sol_sig.get("current_price", 0.0))
+            c_entry = float(apt_sig.get("current_price", 0.0))
             if c_entry <= 0:
                 return
 
@@ -769,55 +769,57 @@ class AutonomousTradingAgent:
             if allocated_capital < 1.50:
                 return
 
-            # Trend Alignment Indicators (SOL 8x Hourly Trend-Surfer)
-            e9 = float(sol_sig.get("ema_9", c_entry))
-            e21 = float(sol_sig.get("ema_21", c_entry))
-            e72 = float(sol_sig.get("ema_72", sol_sig.get("ema_50", c_entry)))
+            # Trend & Pullback Indicators (APT 8x Hourly RSI Trend-Pullback)
+            e72 = float(apt_sig.get("ema_72", apt_sig.get("ema_50", c_entry)))
+            rsi = float(apt_sig.get("rsi", 50.0))
             lev = 8.0  # 8x Isolated Leverage
 
-            # Decision Engine: 9 EMA vs 21 EMA with 72-Hour Macro Trend Filter
-            if e9 > e21 and c_entry > e72:
+            # Decision Engine: 72-Hour Macro Baseline + RSI Dip/Relief Pullback
+            c_side = None
+            bias = ""
+            if c_entry > e72 and rsi < 45.0:
                 c_side = "LONG"
-                bias = f"Bullish Trend-Surge (EMA9 ${e9:.2f} > EMA21 ${e21:.2f} & Price > 72h EMA ${e72:.2f})"
-            elif e9 < e21 and c_entry < e72:
+                bias = f"Bullish Dip-Pullback (Price ${c_entry:.4f} > 72h EMA ${e72:.4f} & RSI {rsi:.1f} < 45)"
+            elif c_entry < e72 and rsi > 55.0:
                 c_side = "SHORT"
-                bias = f"Bearish Trend-Break (EMA9 ${e9:.2f} < EMA21 ${e21:.2f} & Price < 72h EMA ${e72:.2f})"
-            else:
-                c_side = "LONG" if c_entry > e72 else "SHORT"
-                bias = f"Macro Trend Alignment (Price vs 72h EMA ${e72:.2f} -> {c_side})"
+                bias = f"Bearish Relief-Bounce (Price ${c_entry:.4f} < 72h EMA ${e72:.4f} & RSI {rsi:.1f} > 55)"
 
-            # Target: +60% ROI (+7.50% price move at 8x)
-            # Stop Loss: -30% ROI (-3.75% price move at 8x)
-            # Fixed 2:1 Risk-to-Reward (No trailing shakeouts)
-            t_delta = c_entry * (0.60 / lev)
-            s_delta = c_entry * (0.30 / lev)
+            # If no pullback/dip setup present, wait for optimal value entry (no chasing!)
+            if not c_side:
+                return
+
+            # Target: +50% ROI (+6.25% price move at 8x)
+            # Stop Loss: -25% ROI (-3.125% price move at 8x)
+            # Fixed 2:1 Risk-to-Reward (Strict discipline, zero trailing shakeouts)
+            t_delta = c_entry * (0.50 / lev)
+            s_delta = c_entry * (0.25 / lev)
 
             if c_side == "LONG":
-                c_target = round(c_entry + t_delta, 2)
-                c_sl = round(c_entry - s_delta, 2)
+                c_target = round(c_entry + t_delta, 4)
+                c_sl = round(c_entry - s_delta, 4)
             else:
-                c_target = round(c_entry - t_delta, 2)
-                c_sl = round(c_entry + s_delta, 2)
+                c_target = round(c_entry - t_delta, 4)
+                c_sl = round(c_entry + s_delta, 4)
 
             res = self._place_order_cb(
-                symbol="SOL/USDT",
+                symbol="APT/USDT",
                 side=c_side,
                 entry_price=c_entry,
                 stop_loss=c_sl,
                 target_price=c_target,
                 amount_usdt=allocated_capital,
                 leverage=lev,
-                target_roi_pct=0.60,
-                initial_sl_roi_pct=0.30,
+                target_roi_pct=0.50,
+                initial_sl_roi_pct=0.25,
                 trailing_sl_roi_pct=999.0,
             )
 
             self.last_trade_ts = now
             self.add_chat(
                 "agent",
-                f"[SOL 8x TREND-SURFER] {bias}. "
-                f"Entered 8x {c_side} @ ${c_entry:.2f} | Target: ${c_target:.2f} (+60% ROI / +7.5%) | "
-                f"SL: ${c_sl:.2f} (-30% ROI / -3.75%) | Margin: ${allocated_capital:.2f} ({int(m_pct*100)}% tier)",
+                f"[APT 8x RSI TREND-PULLBACK] {bias}. "
+                f"Entered 8x {c_side} @ ${c_entry:.4f} | Target: ${c_target:.4f} (+50% ROI / +6.25%) | "
+                f"SL: ${c_sl:.4f} (-25% ROI / -3.125%) | Margin: ${allocated_capital:.2f} ({int(m_pct*100)}% tier)",
                 action_tag="CONTINUOUS_ORDER",
             )
             return

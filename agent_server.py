@@ -432,6 +432,8 @@ async def fetch_ohlcv_data(
         base_price = 2600.0
     elif "SOL" in symbol:
         base_price = 190.0
+    elif "APT" in symbol:
+        base_price = 8.50
     elif "DOGE" in symbol:
         base_price = 0.0592
     else:
@@ -456,7 +458,7 @@ async def fetch_ohlcv_data(
 
 
 async def _scan_single_symbol(symbol: str, timeframe: str, client: httpx.AsyncClient) -> Dict:
-    df = await fetch_ohlcv_data(symbol, timeframe, limit=55, client=client)
+    df = await fetch_ohlcv_data(symbol, timeframe, limit=100, client=client)
     return generate_signal(df, symbol)
 
 
@@ -942,6 +944,13 @@ async def control_agent_task(req: TaskRequest):
             action_tag=state["mode"],
         )
     return {"status": "success", "state": state}
+
+
+@app.post("/api/agent/guardian/reset")
+def reset_strategy_guardian():
+    """Resets Strategy Guardian health status back to healthy."""
+    trading_agent.reset_strategy_guardian()
+    return {"status": "success", "strategy_health": trading_agent.strategy_health}
 
 
 @app.get("/api/coindcx/status")

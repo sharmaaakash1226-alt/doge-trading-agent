@@ -189,9 +189,9 @@
 
     <!-- Controls -->
     <div class="controls">
-      <!-- Continuous SOL 8x Hourly Trend-Surfer Button -->
+      <!-- Continuous APT 8x Hourly RSI Trend-Pullback Button -->
       <button class="btn" id="btn-trend-surfer" style="grid-column: span 2; background: linear-gradient(135deg, #10b981, #059669); color: #fff; font-weight: 800; font-size: 14px; padding: 15px; box-shadow: 0 4px 18px rgba(16, 185, 129, 0.4); border-radius: 14px; border: none; cursor: pointer;" onclick="startContinuous8xLive()">
-        ⚡ START SOL 8x TREND-SURFER (+60% TP / -30% SL)
+        ⚡ START APT 8x RSI PULLBACK (+50% TP / -25% SL)
       </button>
 
       <!-- Strategy Guardian Health Banner (Shows Warning / Danger below strategy button) -->
@@ -467,7 +467,7 @@
           if (btnSurfer) {
             btnSurfer.style.opacity = '1.0';
             btnSurfer.style.cursor = 'pointer';
-            btnSurfer.innerText = '⚠️ CAUTION: SOL 8x IN WARNING ZONE';
+            btnSurfer.innerText = '⚠️ CAUTION: APT 8x IN WARNING ZONE';
           }
         } else {
           guardianBanner.style.background = 'rgba(16, 185, 129, 0.12)';
@@ -480,7 +480,7 @@
           if (btnSurfer) {
             btnSurfer.style.opacity = '1.0';
             btnSurfer.style.cursor = 'pointer';
-            btnSurfer.innerText = '⚡ START SOL 8x TREND-SURFER (+60% TP / -30% SL)';
+            btnSurfer.innerText = '⚡ START APT 8x RSI PULLBACK (+50% TP / -25% SL)';
           }
         }
 
@@ -600,17 +600,17 @@
         isLiveArmed = armData.live_trading_armed;
         updateArmButton();
 
-        // 2. Launch Continuous SOL 8x Engine
+        // 2. Launch Continuous APT 8x RSI Trend-Pullback Engine
         await fetch('/api/agent/task', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             mode: 'CONTINUOUS_100',
-            symbols: ['SOL/USDT'],
+            symbols: ['APT/USDT'],
             timeframe: '1h',
             leverage: 8,
-            target_roi_pct: 0.60,
-            initial_sl_roi_pct: 0.30,
+            target_roi_pct: 0.50,
+            initial_sl_roi_pct: 0.25,
             trailing_sl_roi_pct: 999.0,
             capital_allocation_pct: 0.30,
             auto_loop: true
@@ -619,7 +619,7 @@
         await pollPortfolioAndState();
         await pollCoinDCX();
       } catch (e) {
-        alert('Failed to start SOL 8x continuous engine: ' + e);
+        alert('Failed to start APT 8x continuous engine: ' + e);
       }
     }
 
