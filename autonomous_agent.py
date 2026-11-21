@@ -20,8 +20,8 @@ from trading_memory import trading_memory
 class AutonomousTradingAgent:
     def __init__(self):
         self.mode: str = "IDLE"  # IDLE | RESEARCH_ONLY | TRACK_ONLY | AUTO_TRADE
-        # Strategy 1: SOL 8x Hourly Trend-Surfer with Progressive Tiered De-Leveraging
-        self.symbols: List[str] = ["SOL/USDT"]
+        # Strategy: APT 8x Hourly RSI Trend-Pullback with Progressive Tiered De-Leveraging
+        self.symbols: List[str] = ["APT/USDT"]
         self.timeframe: str = "1h"
         self.scan_interval_sec: int = 10
         self.trade_gap_sec: int = 0  # Re-research and enter immediately upon trade exit
@@ -32,8 +32,8 @@ class AutonomousTradingAgent:
         # 8x Isolated Leverage Autonomous Engine Configuration
         self.leverage: float = 8.0  # 8x leverage
         self.capital_allocation_pct: float = 0.30  # 30% capital initial tier
-        self.target_roi_pct: float = 0.60  # +60% profit target (+7.50% price move at 8x)
-        self.initial_sl_roi_pct: float = 0.30  # -30% stop-loss (-3.75% price move at 8x)
+        self.target_roi_pct: float = 0.50  # +50% profit target (+6.25% price move at 8x)
+        self.initial_sl_roi_pct: float = 0.25  # -25% stop-loss (-3.125% price move at 8x)
         self.trailing_sl_roi_pct: float = 999.0  # Strict 2:1 RR (No trailing shakeouts)
         self.auto_loop: bool = True  # Continuous autonomous cycle until stopped
         self.order_entry_type: str = "LIMIT_MAKER"  # Post-Only Maker entry
@@ -777,7 +777,7 @@ class AutonomousTradingAgent:
         # -------------------------------------------------------------
         # CONTINUOUS: "APT 8x HOURLY RSI TREND-PULLBACK" (TIERED DE-LEVERAGING)
         # -------------------------------------------------------------
-        if self.mode == "CONTINUOUS_100":
+        if self.mode == "CONTINUOUS_100" or (self.mode in ("AUTO_TRADE", "CONTINUOUS_100") and any("APT" in s for s in self.symbols)):
             apt_sig = next((s for s in signals if "APT" in s.get("symbol", "")), signals[0] if signals else None)
             if not apt_sig:
                 return
